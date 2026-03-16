@@ -28,6 +28,7 @@ export default function Dashboard() {
   // Formulário Estudo
   const [accuracy, setAccuracy] = useState(0);
   const [easiness, setEasiness] = useState("Médio");
+  const [studyDate, setStudyDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -81,9 +82,9 @@ export default function Dashboard() {
     e.preventDefault();
     if (!studyOpen) return;
 
-    const today = startOfDay(new Date());
+    const selectedDate = startOfDay(new Date(studyDate + "T00:00:00"));
     const scheduledDate = startOfDay(new Date(studyOpen.next_review_date));
-    const daysDelayed = differenceInDays(today, scheduledDate);
+    const daysDelayed = differenceInDays(selectedDate, scheduledDate);
 
     // Call SM-2
     const result = calculateSM2({
@@ -95,13 +96,14 @@ export default function Dashboard() {
       daysDelayed
     });
 
-    const nextDate = addDays(today, result.intervalDays);
+    const nextDate = addDays(selectedDate, result.intervalDays);
     const formattedNextDate = format(nextDate, "yyyy-MM-dd");
 
     // 1. Create Study Session Log
     const { error: sessionError } = await supabase.from("study_sessions").insert({
       theme_id: studyOpen.id,
       user_id: session.user.id,
+      study_date: studyDate,
       accuracy_percentage: accuracy,
       easiness_rating: easiness,
       sm2_grade_calculated: result.q,
@@ -148,6 +150,7 @@ export default function Dashboard() {
     setStudyOpen(null);
     setAccuracy(0);
     setEasiness("Médio");
+    setStudyDate(format(new Date(), "yyyy-MM-dd"));
     fetchThemes(session.user.id);
   };
 
@@ -304,6 +307,11 @@ export default function Dashboard() {
             <p className="text-gray-500 text-sm mb-6">Avaliando: <span className="font-semibold text-gray-900">{studyOpen.title}</span></p>
             
             <form onSubmit={submitStudySession} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium mb-2">Data do Estudo</label>
+                <input type="date" value={studyDate} onChange={e => setStudyDate(e.target.value)} max={format(new Date(), "yyyy-MM-dd")} className="w-full border border-gray-300 rounded-md p-2" />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium mb-2">Porcentagem de Acerto nas Questões (%)</label>
                 <div className="flex items-center gap-4">
