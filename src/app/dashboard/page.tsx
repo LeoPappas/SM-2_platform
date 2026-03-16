@@ -6,7 +6,7 @@ import { Theme } from "@/lib/database.types";
 import { calculateSM2 } from "@/lib/sm2";
 import { createOrUpdateCalendarEvent } from "@/lib/calendar";
 import { format, differenceInDays, isBefore, startOfDay, addDays } from "date-fns";
-import { LogOut, Plus, Play, CalendarClock, Activity, BookOpen } from "lucide-react";
+import { LogOut, Plus, Play, CalendarClock, Activity, BookOpen, X } from "lucide-react";
 
 export default function Dashboard() {
   const [session, setSession] = useState<any>(null);
@@ -14,6 +14,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [newThemeOpen, setNewThemeOpen] = useState(false);
   const [studyOpen, setStudyOpen] = useState<Theme | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const showError = (msg: string) => {
+    setErrorMsg(msg);
+    setTimeout(() => setErrorMsg(null), 6000);
+  };
 
   // Formulário Novo Tema
   const [title, setTitle] = useState("");
@@ -36,8 +42,12 @@ export default function Dashboard() {
       .select("*")
       .eq("user_id", userId)
       .order("next_review_date", { ascending: true });
-    
-    if (data) setThemes(data);
+
+    if (error) {
+      showError("Erro ao carregar temas. Tente recarregar a página.");
+    } else if (data) {
+      setThemes(data);
+    }
     setLoading(false);
   };
 
@@ -57,12 +67,14 @@ export default function Dashboard() {
     };
 
     const { error } = await supabase.from("themes").insert(newTheme);
-    if (!error) {
-      setNewThemeOpen(false);
-      setTitle("");
-      setArea("");
-      fetchThemes(session.user.id);
+    if (error) {
+      showError("Erro ao criar tema. Verifique os dados e tente novamente.");
+      return;
     }
+    setNewThemeOpen(false);
+    setTitle("");
+    setArea("");
+    fetchThemes(session.user.id);
   };
 
   const submitStudySession = async (e: React.FormEvent) => {
@@ -87,7 +99,7 @@ export default function Dashboard() {
     const formattedNextDate = format(nextDate, "yyyy-MM-dd");
 
     // 1. Create Study Session Log
-    await supabase.from("study_sessions").insert({
+    const { error: sessionError } = await supabase.from("study_sessions").insert({
       theme_id: studyOpen.id,
       user_id: session.user.id,
       accuracy_percentage: accuracy,
@@ -95,21 +107,30 @@ export default function Dashboard() {
       sm2_grade_calculated: result.q,
     });
 
+    if (sessionError) {
+      showError("Erro ao salvar a sessão de estudo. Tente novamente.");
+      return;
+    }
+
     // Sync com Google Calendar
     let newEventId = studyOpen.calendar_event_id;
     if (session?.provider_token) {
-      const eventId = await createOrUpdateCalendarEvent({
-        providerToken: session.provider_token,
-        eventId: studyOpen.calendar_event_id,
-        summary: studyOpen.title,
-        description: `Área: ${studyOpen.area}\nContatos: ${result.repetitions}\nSua precisão anterior: ${accuracy}%\nAtualização gerada pela plataforma SM-2.`,
-        date: formattedNextDate,
-      });
-      if (eventId) newEventId = eventId;
+      try {
+        const eventId = await createOrUpdateCalendarEvent({
+          providerToken: session.provider_token,
+          eventId: studyOpen.calendar_event_id,
+          summary: studyOpen.title,
+          description: `Área: ${studyOpen.area}\nContatos: ${result.repetitions}\nSua precisão anterior: ${accuracy}%\nAtualização gerada pela plataforma SM-2.`,
+          date: formattedNextDate,
+        });
+        if (eventId) newEventId = eventId;
+      } catch {
+        showError("Erro ao sincronizar com Google Calendar. A revisão foi salva normalmente.");
+      }
     }
 
     // 2. Update Theme
-    await supabase
+    const { error: updateError } = await supabase
       .from("themes")
       .update({
         repetitions: result.repetitions,
@@ -119,6 +140,10 @@ export default function Dashboard() {
         calendar_event_id: newEventId,
       })
       .eq("id", studyOpen.id);
+
+    if (updateError) {
+      showError("Erro ao atualizar o tema. A sessão foi salva, mas o tema pode estar desatualizado.");
+    }
 
     setStudyOpen(null);
     setAccuracy(0);
@@ -141,6 +166,15 @@ export default function Dashboard() {
           <LogOut size={18} /> Sair
         </button>
       </header>
+
+      {errorMsg && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 flex items-center justify-between">
+          <span className="text-sm font-medium">{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="text-red-500 hover:text-red-700">
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       <main className="max-w-5xl mx-auto p-6 space-y-8">
         
