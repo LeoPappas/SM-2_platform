@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Theme } from "@/lib/database.types";
+import { Theme, StudySession } from "@/lib/database.types";
 import { calculateSM2 } from "@/lib/sm2";
-import { createOrUpdateCalendarEvent } from "@/lib/calendar";
-import { format, differenceInDays, isBefore, startOfDay, addDays } from "date-fns";
-import { LogOut, Plus, Play, CalendarClock, Activity, BookOpen, X } from "lucide-react";
+import { createOrUpdateCalendarEvent, deleteCalendarEvent } from "@/lib/calendar";
+import { format, differenceInDays, startOfDay, addDays } from "date-fns";
+import { LogOut, Plus, Play, CalendarClock, Activity, BookOpen, X, Pencil, Trash2, History } from "lucide-react";
 
 export default function Dashboard() {
   const [session, setSession] = useState<any>(null);
@@ -15,6 +15,19 @@ export default function Dashboard() {
   const [newThemeOpen, setNewThemeOpen] = useState(false);
   const [studyOpen, setStudyOpen] = useState<Theme | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Edit Theme
+  const [editTheme, setEditTheme] = useState<Theme | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editArea, setEditArea] = useState("");
+
+  // Delete Theme
+  const [deleteConfirm, setDeleteConfirm] = useState<Theme | null>(null);
+
+  // Study Session History
+  const [sessionsView, setSessionsView] = useState<Theme | null>(null);
+  const [sessions, setSessions] = useState<StudySession[]>([]);
 
   const showError = (msg: string) => {
     setErrorMsg(msg);
@@ -36,6 +49,14 @@ export default function Dashboard() {
       if (session) fetchThemes(session.user.id);
     });
   }, []);
+
+  const getValidToken = async (): Promise<string | null> => {
+    const { data: { session: freshSession } } = await supabase.auth.getSession();
+    if (freshSession) {
+      setSession(freshSession);
+    }
+    return freshSession?.provider_token ?? null;
+  };
 
   const fetchThemes = async (userId: string) => {
     const { data, error } = await supabase
@@ -60,27 +81,123 @@ export default function Dashboard() {
   const addTheme = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !area) return;
+    setSubmitting(true);
 
-    const newTheme = {
-      user_id: session.user.id,
-      title,
-      area,
-    };
+    const { data: inserted, error } = await supabase
+      .from("themes")
+      .insert({ user_id: session.user.id, title, area })
+      .select()
+      .single();
 
-    const { error } = await supabase.from("themes").insert(newTheme);
-    if (error) {
+    if (error || !inserted) {
       showError("Erro ao criar tema. Verifique os dados e tente novamente.");
+      setSubmitting(false);
       return;
     }
+
+    // Create calendar event for the initial review date
+    const token = await getValidToken();
+    if (token) {
+      try {
+        const eventId = await createOrUpdateCalendarEvent({
+          providerToken: token,
+          eventId: null,
+          summary: inserted.title,
+          description: `Área: ${inserted.area}\nPrimeira revisão.\nAtualização gerada pela plataforma SM-2.`,
+          date: inserted.next_review_date,
+        });
+        if (eventId) {
+          await supabase
+            .from("themes")
+            .update({ calendar_event_id: eventId })
+            .eq("id", inserted.id);
+        }
+      } catch {
+        showError("Tema criado, mas erro ao criar evento no calendário.");
+      }
+    }
+
     setNewThemeOpen(false);
     setTitle("");
     setArea("");
+    setSubmitting(false);
+    fetchThemes(session.user.id);
+  };
+
+  const updateTheme = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTheme || !editTitle || !editArea) return;
+    setSubmitting(true);
+
+    const { error } = await supabase
+      .from("themes")
+      .update({ title: editTitle, area: editArea })
+      .eq("id", editTheme.id);
+
+    if (error) {
+      showError("Erro ao atualizar tema.");
+      setSubmitting(false);
+      return;
+    }
+
+    // Update calendar event summary if one exists
+    if (editTheme.calendar_event_id) {
+      const token = await getValidToken();
+      if (token) {
+        try {
+          await createOrUpdateCalendarEvent({
+            providerToken: token,
+            eventId: editTheme.calendar_event_id,
+            summary: editTitle,
+            description: `Área: ${editArea}\nContatos: ${editTheme.repetitions}\nAtualização gerada pela plataforma SM-2.`,
+            date: editTheme.next_review_date,
+          });
+        } catch {
+          showError("Tema atualizado, mas erro ao atualizar evento no calendário.");
+        }
+      }
+    }
+
+    setEditTheme(null);
+    setSubmitting(false);
+    fetchThemes(session.user.id);
+  };
+
+  const deleteTheme = async () => {
+    if (!deleteConfirm) return;
+    setSubmitting(true);
+
+    // Delete calendar event (best-effort)
+    if (deleteConfirm.calendar_event_id) {
+      const token = await getValidToken();
+      if (token) {
+        try {
+          await deleteCalendarEvent({
+            providerToken: token,
+            eventId: deleteConfirm.calendar_event_id,
+          });
+        } catch { /* calendar cleanup is best-effort */ }
+      }
+    }
+
+    // Delete study sessions first (in case no CASCADE in DB)
+    await supabase.from("study_sessions").delete().eq("theme_id", deleteConfirm.id);
+
+    // Delete theme
+    const { error } = await supabase.from("themes").delete().eq("id", deleteConfirm.id);
+    if (error) {
+      showError("Erro ao deletar tema.");
+    }
+
+    setDeleteConfirm(null);
+    setSubmitting(false);
     fetchThemes(session.user.id);
   };
 
   const submitStudySession = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!studyOpen) return;
+    setSubmitting(true);
 
     const selectedDate = startOfDay(new Date(studyDate + "T00:00:00"));
     const scheduledDate = startOfDay(new Date(studyOpen.next_review_date));
@@ -111,15 +228,17 @@ export default function Dashboard() {
 
     if (sessionError) {
       showError("Erro ao salvar a sessão de estudo. Tente novamente.");
+      setSubmitting(false);
       return;
     }
 
     // Sync com Google Calendar
     let newEventId = studyOpen.calendar_event_id;
-    if (session?.provider_token) {
+    const token = await getValidToken();
+    if (token) {
       try {
         const eventId = await createOrUpdateCalendarEvent({
-          providerToken: session.provider_token,
+          providerToken: token,
           eventId: studyOpen.calendar_event_id,
           summary: studyOpen.title,
           description: `Área: ${studyOpen.area}\nContatos: ${result.repetitions}\nSua precisão anterior: ${accuracy}%\nAtualização gerada pela plataforma SM-2.`,
@@ -151,7 +270,32 @@ export default function Dashboard() {
     setAccuracy(0);
     setEasiness("Médio");
     setStudyDate(format(new Date(), "yyyy-MM-dd"));
+    setSubmitting(false);
     fetchThemes(session.user.id);
+  };
+
+  const openSessionsView = async (theme: Theme) => {
+    setSessionsView(theme);
+    const { data, error } = await supabase
+      .from("study_sessions")
+      .select("*")
+      .eq("theme_id", theme.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      showError("Erro ao carregar sessões.");
+      return;
+    }
+    setSessions(data || []);
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    const { error } = await supabase.from("study_sessions").delete().eq("id", sessionId);
+    if (error) {
+      showError("Erro ao deletar sessão.");
+      return;
+    }
+    if (sessionsView) openSessionsView(sessionsView);
   };
 
   if (loading) return <div className="p-10">Carregando dados...</div>;
@@ -180,7 +324,7 @@ export default function Dashboard() {
       )}
 
       <main className="max-w-5xl mx-auto p-6 space-y-8">
-        
+
         {/* Backlog Widget */}
         <section>
           <div className="flex items-center justify-between mb-4">
@@ -206,7 +350,7 @@ export default function Dashboard() {
                       Revisões: {theme.repetitions} • EF: {theme.easiness_factor}
                     </p>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setStudyOpen(theme)}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md transition-colors flex items-center justify-center gap-2"
                   >
@@ -224,7 +368,7 @@ export default function Dashboard() {
             <h2 className="text-xl font-semibold flex items-center gap-2">
               <Activity className="text-blue-500" /> Todos os Temas
             </h2>
-            <button 
+            <button
               onClick={() => setNewThemeOpen(true)}
               className="bg-white border border-gray-300 shadow-sm hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-md transition-colors flex items-center gap-2 text-sm"
             >
@@ -254,18 +398,45 @@ export default function Dashboard() {
                       <td className="p-4 text-gray-500">{theme.repetitions}</td>
                       <td className="p-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${isDue ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                          {isDue ? 'Atrasado/Hoje' : 'Em Dia'} 
+                          {isDue ? 'Atrasado/Hoje' : 'Em Dia'}
                         </span>
                         <div className="mt-1 text-xs text-gray-400">{theme.next_review_date}</div>
                       </td>
                       <td className="p-4 text-gray-500">{theme.easiness_factor}</td>
                       <td className="p-4 text-right">
-                        <button 
-                          onClick={() => setStudyOpen(theme)}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                        >
-                          Estudar
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            onClick={() => setStudyOpen(theme)}
+                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                          >
+                            Estudar
+                          </button>
+                          <button
+                            onClick={() => openSessionsView(theme)}
+                            className="text-gray-400 hover:text-gray-600"
+                            title="Histórico"
+                          >
+                            <History size={15} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditTheme(theme);
+                              setEditTitle(theme.title);
+                              setEditArea(theme.area);
+                            }}
+                            className="text-gray-400 hover:text-gray-600"
+                            title="Editar"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(theme)}
+                            className="text-red-400 hover:text-red-600"
+                            title="Deletar"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -292,9 +463,55 @@ export default function Dashboard() {
               </div>
               <div className="flex justify-end gap-2 pt-4">
                 <button type="button" onClick={() => setNewThemeOpen(false)} className="px-4 py-2 text-gray-500 hover:text-gray-700">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Salvar Tema</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                  {submitting ? "Salvando..." : "Salvar Tema"}
+                </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR TEMA */}
+      {editTheme && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold mb-4">Editar Tema</h3>
+            <form onSubmit={updateTheme} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Título</label>
+                <input required value={editTitle} onChange={e => setEditTitle(e.target.value)} type="text" className="w-full border border-gray-300 rounded-md p-2" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Área Médica</label>
+                <input required value={editArea} onChange={e => setEditArea(e.target.value)} type="text" className="w-full border border-gray-300 rounded-md p-2" />
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <button type="button" onClick={() => setEditTheme(null)} className="px-4 py-2 text-gray-500 hover:text-gray-700">Cancelar</button>
+                <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                  {submitting ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAR EXCLUSÃO */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold mb-2 text-red-600">Deletar Tema</h3>
+            <p className="text-gray-600 mb-6">
+              Tem certeza que deseja deletar <span className="font-semibold">&quot;{deleteConfirm.title}&quot;</span>?
+              Todas as sessões de estudo associadas serão removidas. Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDeleteConfirm(null)} className="px-4 py-2 text-gray-500 hover:text-gray-700">Cancelar</button>
+              <button onClick={deleteTheme} disabled={submitting} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50">
+                {submitting ? "Deletando..." : "Deletar"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -305,7 +522,7 @@ export default function Dashboard() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <h3 className="text-xl font-bold mb-2">Sessão de Estudos</h3>
             <p className="text-gray-500 text-sm mb-6">Avaliando: <span className="font-semibold text-gray-900">{studyOpen.title}</span></p>
-            
+
             <form onSubmit={submitStudySession} className="space-y-6">
               <div>
                 <label className="block text-sm font-medium mb-2">Data do Estudo</label>
@@ -319,7 +536,7 @@ export default function Dashboard() {
                   <span className="font-bold text-lg w-12 text-center text-blue-600">{accuracy}%</span>
                 </div>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium mb-2">Como foi a Facilidade do Tema?</label>
                 <select value={easiness} onChange={e => setEasiness(e.target.value)} className="w-full border border-gray-300 rounded-md p-2 bg-white">
@@ -333,11 +550,43 @@ export default function Dashboard() {
 
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setStudyOpen(null)} className="px-4 py-2 text-gray-500 hover:text-gray-700">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-2">
-                  <Play size={16} /> Concluir Sessão
+                <button type="submit" disabled={submitting} className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+                  <Play size={16} /> {submitting ? "Salvando..." : "Concluir Sessão"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL HISTÓRICO DE SESSÕES */}
+      {sessionsView && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-1">Histórico de Sessões</h3>
+            <p className="text-gray-500 text-sm mb-4">{sessionsView.title}</p>
+            {sessions.length === 0 ? (
+              <p className="text-gray-400 text-sm">Nenhuma sessão registrada.</p>
+            ) : (
+              <div className="space-y-3">
+                {sessions.map(s => (
+                  <div key={s.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                    <div>
+                      <div className="text-sm font-medium">{format(new Date(s.created_at), "dd/MM/yyyy HH:mm")}</div>
+                      <div className="text-xs text-gray-500">
+                        Acerto: {s.accuracy_percentage}% | Facilidade: {s.easiness_rating} | Nota SM-2: {s.sm2_grade_calculated}
+                      </div>
+                    </div>
+                    <button onClick={() => deleteSession(s.id)} className="text-red-400 hover:text-red-600 ml-3 shrink-0">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end pt-4">
+              <button onClick={() => setSessionsView(null)} className="px-4 py-2 text-gray-500 hover:text-gray-700">Fechar</button>
+            </div>
           </div>
         </div>
       )}
