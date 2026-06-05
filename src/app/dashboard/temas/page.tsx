@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Theme, StudySession } from "@/lib/database.types";
 import { calculateSM2 } from "@/lib/sm2";
@@ -38,26 +38,12 @@ export default function TemasPage() {
   const [sessionsView, setSessionsView] = useState<Theme | null>(null);
   const [sessions, setSessions] = useState<StudySession[]>([]);
 
-  const showError = (msg: string) => {
+  const showError = useCallback((msg: string) => {
     setErrorMsg(msg);
     setTimeout(() => setErrorMsg(null), 6000);
-  };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchThemes(session.user.id);
-      else setLoading(false);
-    });
   }, []);
 
-  const getValidToken = async (): Promise<string | null> => {
-    const { data: { session: freshSession } } = await supabase.auth.getSession();
-    if (freshSession) setSession(freshSession);
-    return freshSession?.provider_token ?? null;
-  };
-
-  const fetchThemes = async (userId: string) => {
+  const fetchThemes = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from("themes")
       .select("*")
@@ -67,7 +53,21 @@ export default function TemasPage() {
     if (error) showError("Erro ao carregar temas. Tente recarregar a página.");
     else if (data) setThemes(data);
     setLoading(false);
+  }, [showError]);
+
+  const getValidToken = async (): Promise<string | null> => {
+    const { data: { session: freshSession } } = await supabase.auth.getSession();
+    if (freshSession) setSession(freshSession);
+    return freshSession?.provider_token ?? null;
   };
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchThemes(session.user.id);
+      else setLoading(false);
+    });
+  }, [fetchThemes]);
 
   const addTheme = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -25,7 +25,7 @@ export function calculateSM2({
 
   // Ajustes com base na auto-avaliação (Facilidade)
   if (easiness === "Muito Fácil" && q < 5) q += 1;
-  if (easiness === "Médio") Math.max(0, q - 1);
+  if (easiness === "Médio") q = Math.max(0, q - 1);
   if (easiness === "Difícil") q = Math.max(0, q - 2);
   if (easiness === "Muito Difícil") q = 0; // Blackout
 

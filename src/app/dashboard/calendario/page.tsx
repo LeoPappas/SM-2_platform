@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Theme, StudySession } from "@/lib/database.types";
 import { calculateSM2 } from "@/lib/sm2";
@@ -39,20 +39,12 @@ export default function CalendarioPage() {
   const [easiness, setEasiness] = useState("Médio");
   const [studyDate, setStudyDate] = useState(format(new Date(), "yyyy-MM-dd"));
 
-  const showError = (msg: string) => {
+  const showError = useCallback((msg: string) => {
     setErrorMsg(msg);
     setTimeout(() => setErrorMsg(null), 6000);
-  };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchData(session.user.id);
-      else setLoading(false);
-    });
   }, []);
 
-  const fetchData = async (userId: string) => {
+  const fetchData = useCallback(async (userId: string) => {
     const [themesRes, sessionsRes] = await Promise.all([
       supabase.from("themes").select("*").eq("user_id", userId).order("next_review_date", { ascending: true }),
       supabase.from("study_sessions").select("*").eq("user_id", userId).order("study_date", { ascending: true }),
@@ -62,7 +54,15 @@ export default function CalendarioPage() {
     if (sessionsRes.error) showError("Erro ao carregar sessões.");
     else if (sessionsRes.data) setAllSessions(sessionsRes.data);
     setLoading(false);
-  };
+  }, [showError]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchData(session.user.id);
+      else setLoading(false);
+    });
+  }, [fetchData]);
 
   const getValidToken = async (): Promise<string | null> => {
     const { data: { session: freshSession } } = await supabase.auth.getSession();
