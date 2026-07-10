@@ -1,6 +1,6 @@
-# SM-2 Platform
+# MetaMed Revisao
 
-Plataforma de repeticao espacada para estudos de medicina, com autenticacao via Supabase, agenda de revisoes e sincronizacao one-way com Google Calendar.
+Plataforma de revisao espacada para blocos de questoes de medicina, com autenticacao via Supabase, agenda de revisoes e sincronizacao one-way com Google Calendar.
 
 ## Requisitos
 
@@ -15,13 +15,19 @@ Crie um arquivo `.env` na raiz do projeto com:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
 ```
 
-O schema esperado pelo app esta versionado em:
+As variaveis `GOOGLE_OAUTH_CLIENT_ID` e `GOOGLE_OAUTH_CLIENT_SECRET` devem usar o mesmo cliente Web configurado no Google OAuth/Supabase. Elas ficam apenas no servidor e permitem renovar o token do Google Calendar quando o access token expira.
+
+O schema vigente do app esta versionado em:
 
 ```text
-supabase/migrations/20260604000000_initial_schema.sql
+supabase/migrations/20260604010000_question_blocks_schema.sql
 ```
+
+A migration inicial antiga criou `themes` e `study_sessions`; a migration vigente remove essas tabelas e cria `question_blocks`, `block_reviews`, `areas` e `exam_targets`.
 
 ## Desenvolvimento local
 
@@ -46,6 +52,7 @@ http://localhost:3000
 ## Verificacao
 
 ```bash
+npm run test
 npm run lint
 npm run build
 npm audit --omit=dev
