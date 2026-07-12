@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { BarChart2, BookOpenCheck, Calendar, Home, LogOut, Trophy } from "lucide-react";
+import { clearGoogleProviderToken, persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
-import { Home, BarChart2, Calendar, BookOpen, Trophy, LogOut } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/dashboard/metricas", label: "Métricas", icon: BarChart2 },
   { href: "/dashboard/calendario", label: "Calendário", icon: Calendar },
-  { href: "/dashboard/temas", label: "Temas", icon: BookOpen },
+  { href: "/dashboard/blocos", label: "Blocos", icon: BookOpenCheck },
   { href: "/dashboard/rankings", label: "Rankings", icon: Trophy },
 ];
 
@@ -21,37 +22,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      persistGoogleProviderToken(session);
       if (!session) router.replace("/");
       else setChecking(false);
     });
   }, [router]);
 
   const handleLogout = async () => {
+    clearGoogleProviderToken();
     await supabase.auth.signOut();
     router.replace("/");
   };
 
-  if (checking) return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-950 text-gray-500 text-sm">
-      Carregando...
-    </div>
-  );
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-950 text-sm text-gray-500">
+        Carregando...
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      <aside className="w-56 bg-gray-900 flex flex-col shrink-0 overflow-y-auto">
-        <div className="px-5 py-5 border-b border-gray-800">
-          <span className="text-sm font-bold text-white tracking-wide">SM-2 Medicina</span>
+      <aside className="flex w-56 shrink-0 flex-col overflow-y-auto bg-gray-900">
+        <div className="border-b border-gray-800 px-5 py-5">
+          <span className="text-sm font-bold tracking-wide text-white">MetaMed Revisão</span>
         </div>
 
-        <nav className="flex-1 p-3 space-y-0.5 mt-1">
+        <nav className="mt-1 flex-1 space-y-0.5 p-3">
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   active
                     ? "bg-blue-600 text-white"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"
@@ -64,10 +69,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        <div className="p-3 border-t border-gray-800">
+        <div className="border-t border-gray-800 p-3">
           <button
             onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white w-full transition-colors"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
           >
             <LogOut size={17} />
             Sair

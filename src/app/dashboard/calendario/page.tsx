@@ -1,350 +1,352 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { Theme, StudySession } from "@/lib/database.types";
-import { calculateSM2 } from "@/lib/sm2";
-import { createOrUpdateCalendarEvent } from "@/lib/calendar";
+import { useCallback, useEffect, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import {
-  format, differenceInDays, startOfDay, addDays,
-  startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  eachDayOfInterval, isSameMonth, addMonths, subMonths,
+  addDays,
+  addMonths,
+  differenceInDays,
+  eachDayOfInterval,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameMonth,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  subMonths,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Plus, ChevronLeft, ChevronRight, Play, X } from "lucide-react";
-
-type EventType = "completed" | "scheduled" | "missed";
+import { ChevronLeft, ChevronRight, Play, X } from "lucide-react";
+import { calendarSyncPatchFromResult } from "@/lib/calendar";
+import { createOrUpdateCalendarEventWithAuth } from "@/lib/calendar-auth";
+import type { BlockReview, DifficultyRating, QuestionBlock } from "@/lib/database.types";
+import { getGoogleProviderToken, persistGoogleProviderToken } from "@/lib/google-provider-token";
+import { calculateAccuracy, calculateBlockReview } from "@/lib/sm2";
+import { supabase } from "@/lib/supabase";
 
 type CalendarEvent = {
-  type: EventType;
+  type: "completed" | "scheduled" | "missed" | "first-contact";
   label: string;
-  theme: Theme;
-  sessionId?: string;
+  block: QuestionBlock;
+  date: string;
 };
 
+const difficultyOptions: DifficultyRating[] = [
+  "Muito fácil",
+  "Fácil",
+  "Médio",
+  "Difícil",
+  "Muito difícil",
+];
+
 export default function CalendarioPage() {
-  const [session, setSession] = useState<any>(null);
-  const [themes, setThemes] = useState<Theme[]>([]);
-  const [allSessions, setAllSessions] = useState<StudySession[]>([]);
+  const [session, setSession] = useState<Session | null>(null);
+  const [blocks, setBlocks] = useState<QuestionBlock[]>([]);
+  const [reviews, setReviews] = useState<BlockReview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [actionOpen, setActionOpen] = useState<CalendarEvent | null>(null);
+  const [reviewOpen, setReviewOpen] = useState<QuestionBlock | null>(null);
+  const [reviewDate, setReviewDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [rescheduleOpen, setRescheduleOpen] = useState<CalendarEvent | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [questionCount, setQuestionCount] = useState(20);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [difficulty, setDifficulty] = useState<DifficultyRating>("Médio");
 
-  const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [selectedThemeId, setSelectedThemeId] = useState("");
-  const [studyOpen, setStudyOpen] = useState<Theme | null>(null);
-  const [accuracy, setAccuracy] = useState(0);
-  const [easiness, setEasiness] = useState("Médio");
-  const [studyDate, setStudyDate] = useState(format(new Date(), "yyyy-MM-dd"));
-
-  const showError = (msg: string) => {
+  const showError = useCallback((msg: string) => {
     setErrorMsg(msg);
     setTimeout(() => setErrorMsg(null), 6000);
-  };
+  }, []);
+
+  const fetchData = useCallback(async (userId: string) => {
+    const [blocksRes, reviewsRes] = await Promise.all([
+      supabase.from("question_blocks").select("*").eq("user_id", userId).order("next_review_date", { ascending: true }),
+      supabase.from("block_reviews").select("*").eq("user_id", userId).order("review_date", { ascending: true }),
+    ]);
+
+    if (blocksRes.error) showError("Erro ao carregar blocos.");
+    else setBlocks(blocksRes.data ?? []);
+    if (reviewsRes.error) showError("Erro ao carregar revisões.");
+    else setReviews(reviewsRes.data ?? []);
+    setLoading(false);
+  }, [showError]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      persistGoogleProviderToken(session);
       setSession(session);
       if (session) fetchData(session.user.id);
       else setLoading(false);
     });
-  }, []);
+  }, [fetchData]);
 
-  const fetchData = async (userId: string) => {
-    const [themesRes, sessionsRes] = await Promise.all([
-      supabase.from("themes").select("*").eq("user_id", userId).order("next_review_date", { ascending: true }),
-      supabase.from("study_sessions").select("*").eq("user_id", userId).order("study_date", { ascending: true }),
-    ]);
-    if (themesRes.error) showError("Erro ao carregar temas.");
-    else if (themesRes.data) setThemes(themesRes.data);
-    if (sessionsRes.error) showError("Erro ao carregar sessões.");
-    else if (sessionsRes.data) setAllSessions(sessionsRes.data);
-    setLoading(false);
-  };
-
-  const getValidToken = async (): Promise<string | null> => {
+  const getValidToken = async () => {
     const { data: { session: freshSession } } = await supabase.auth.getSession();
-    if (freshSession) setSession(freshSession);
-    return freshSession?.provider_token ?? null;
+    if (freshSession) {
+      persistGoogleProviderToken(freshSession);
+      setSession(freshSession);
+    }
+    return getGoogleProviderToken();
   };
 
-  const submitStudySession = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!studyOpen) return;
+  const openReview = (block: QuestionBlock, date?: string) => {
+    setActionOpen(null);
+    setReviewOpen(block);
+    setReviewDate(date && date <= format(new Date(), "yyyy-MM-dd") ? date : format(new Date(), "yyyy-MM-dd"));
+    setQuestionCount(block.question_count);
+    setCorrectCount(block.correct_count);
+    setDifficulty(block.perceived_difficulty);
+  };
+
+  const openReschedule = (calendarEvent: CalendarEvent) => {
+    setActionOpen(null);
+    setRescheduleOpen(calendarEvent);
+    setRescheduleDate(calendarEvent.date);
+  };
+
+  const submitReschedule = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!session || !rescheduleOpen || !rescheduleDate) return;
     setSubmitting(true);
 
-    const selectedDate = startOfDay(new Date(studyDate + "T00:00:00"));
-    const scheduledDate = startOfDay(new Date(studyOpen.next_review_date + "T00:00:00"));
-    const daysDelayed = differenceInDays(selectedDate, scheduledDate);
+    const block = rescheduleOpen.block;
+    let calendarPatch = {};
+    let calendarSyncMessage: string | null = null;
 
-    const result = calculateSM2({
-      accuracy,
-      easiness,
-      repetitions: studyOpen.repetitions,
-      previousInterval: studyOpen.interval_days,
-      previousEF: studyOpen.easiness_factor,
-      daysDelayed,
-    });
+    if (block.calendar_sync_enabled) {
+      await getValidToken();
+      const syncResult = await createOrUpdateCalendarEventWithAuth({
+        eventId: block.calendar_event_id,
+        summary: block.title,
+        description: [
+          `Área: ${block.area_name}`,
+          `Questões: ${block.question_count}`,
+          `Revisão remarcada manualmente para ${rescheduleDate}.`,
+        ].join("\n"),
+        date: rescheduleDate,
+      });
+      calendarPatch = calendarSyncPatchFromResult(syncResult);
+      if (!syncResult.ok) calendarSyncMessage = syncResult.message;
+    }
 
-    const nextDate = addDays(selectedDate, result.intervalDays);
-    const formattedNextDate = format(nextDate, "yyyy-MM-dd");
+    const { error } = await supabase
+      .from("question_blocks")
+      .update({
+        next_review_date: rescheduleDate,
+        ...calendarPatch,
+      })
+      .eq("id", block.id);
 
-    const { error: sessionError } = await supabase.from("study_sessions").insert({
-      theme_id: studyOpen.id,
-      user_id: session.user.id,
-      study_date: studyDate,
-      accuracy_percentage: accuracy,
-      easiness_rating: easiness,
-      sm2_grade_calculated: result.q,
-    });
-
-    if (sessionError) {
-      showError("Erro ao salvar a sessão de estudo.");
+    if (error) {
+      showError("Erro ao remarcar revisão.");
       setSubmitting(false);
       return;
     }
 
-    let newEventId = studyOpen.calendar_event_id;
-    const token = await getValidToken();
-    if (token) {
-      try {
-        const eventId = await createOrUpdateCalendarEvent({
-          providerToken: token,
-          eventId: studyOpen.calendar_event_id,
-          summary: studyOpen.title,
-          description: `Área: ${studyOpen.area}\nContatos: ${result.repetitions}\nSua precisão anterior: ${accuracy}%\nAtualização gerada pela plataforma SM-2.`,
-          date: formattedNextDate,
-        });
-        if (eventId) newEventId = eventId;
-      } catch {
-        showError("Erro ao sincronizar com Google Calendar. A revisão foi salva normalmente.");
-      }
+    setRescheduleOpen(null);
+    setSubmitting(false);
+    if (calendarSyncMessage) showError(`Revisão remarcada, mas o Google Calendar não foi atualizado: ${calendarSyncMessage}`);
+    fetchData(session.user.id);
+  };
+
+  const submitReview = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!session || !reviewOpen || correctCount > questionCount) return;
+    setSubmitting(true);
+
+    const selectedDate = startOfDay(new Date(`${reviewDate}T00:00:00`));
+    const scheduledDate = startOfDay(new Date(`${reviewOpen.next_review_date}T00:00:00`));
+    const daysDelayed = differenceInDays(selectedDate, scheduledDate);
+    const accuracy = calculateAccuracy(correctCount, questionCount);
+    const result = calculateBlockReview({
+      accuracy,
+      perceivedDifficulty: difficulty,
+      repetitions: reviewOpen.repetitions,
+      previousInterval: reviewOpen.interval_days,
+      previousEF: reviewOpen.easiness_factor,
+      daysDelayed,
+      priorityWeight: reviewOpen.priority_weight,
+    });
+    const nextReviewDate = format(addDays(selectedDate, result.intervalDays), "yyyy-MM-dd");
+
+    const { error: reviewError } = await supabase.from("block_reviews").insert({
+      block_id: reviewOpen.id,
+      user_id: session.user.id,
+      review_date: reviewDate,
+      question_count: questionCount,
+      correct_count: correctCount,
+      accuracy_percentage: accuracy,
+      perceived_difficulty: difficulty,
+      sm2_grade_calculated: result.q,
+      previous_next_review_date: reviewOpen.next_review_date,
+      new_next_review_date: nextReviewDate,
+    });
+
+    if (reviewError) {
+      showError("Erro ao salvar revisão.");
+      setSubmitting(false);
+      return;
+    }
+
+    let calendarPatch = {};
+    if (reviewOpen.calendar_sync_enabled) {
+      await getValidToken();
+      const syncResult = await createOrUpdateCalendarEventWithAuth({
+        eventId: reviewOpen.calendar_event_id,
+        summary: reviewOpen.title,
+        description: `Área: ${reviewOpen.area_name}\nQuestões: ${questionCount}\nAcertos: ${correctCount} (${accuracy}%)`,
+        date: nextReviewDate,
+      });
+      calendarPatch = calendarSyncPatchFromResult(syncResult);
     }
 
     const { error: updateError } = await supabase
-      .from("themes")
+      .from("question_blocks")
       .update({
+        question_count: questionCount,
+        correct_count: correctCount,
+        accuracy_percentage: accuracy,
+        perceived_difficulty: difficulty,
         repetitions: result.repetitions,
         easiness_factor: result.easinessFactor,
         interval_days: result.intervalDays,
-        next_review_date: formattedNextDate,
-        calendar_event_id: newEventId,
+        next_review_date: nextReviewDate,
+        ...calendarPatch,
       })
-      .eq("id", studyOpen.id);
+      .eq("id", reviewOpen.id);
 
-    if (updateError) showError("Erro ao atualizar o tema.");
+    if (updateError) showError("Revisão salva, mas o bloco não foi atualizado.");
 
-    setStudyOpen(null);
-    setAccuracy(0);
-    setEasiness("Médio");
-    setStudyDate(format(new Date(), "yyyy-MM-dd"));
+    setReviewOpen(null);
     setSubmitting(false);
     fetchData(session.user.id);
   };
 
-  const openStudyModal = (theme: Theme) => {
-    setStudyOpen(theme);
-    setStudyDate(format(new Date(), "yyyy-MM-dd"));
-    setAccuracy(0);
-    setEasiness("Médio");
-  };
-
-  const handleThemePickerContinue = () => {
-    const theme = themes.find(t => t.id === selectedThemeId);
-    if (!theme) return;
-    setThemePickerOpen(false);
-    setSelectedThemeId("");
-    openStudyModal(theme);
-  };
-
-  // --- Calendar logic ---
   const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
+  const reviewsByBlock = reviews.reduce<Record<string, BlockReview[]>>((acc, review) => {
+    acc[review.block_id] = acc[review.block_id] ?? [];
+    acc[review.block_id].push(review);
+    return acc;
+  }, {});
+  const reviewsByDate = reviews.reduce<Record<string, BlockReview[]>>((acc, review) => {
+    acc[review.review_date] = acc[review.review_date] ?? [];
+    acc[review.review_date].push(review);
+    return acc;
+  }, {});
 
-  // sessionsByTheme[themeId] = sessions sorted by study_date ASC (preserved from fetch order)
-  const sessionsByTheme: Record<string, StudySession[]> = {};
-  allSessions.forEach(s => {
-    if (!sessionsByTheme[s.theme_id]) sessionsByTheme[s.theme_id] = [];
-    sessionsByTheme[s.theme_id].push(s);
-  });
-
-  // sessionsByDate[dateStr] = sessions completed on that date
-  const sessionsByDate: Record<string, StudySession[]> = {};
-  allSessions.forEach(s => {
-    if (!sessionsByDate[s.study_date]) sessionsByDate[s.study_date] = [];
-    sessionsByDate[s.study_date].push(s);
-  });
-
-  // Label for a future/missed theme: PC if never studied, R-n if n sessions done
-  const getThemeLabel = (themeId: string): string => {
-    const count = (sessionsByTheme[themeId] || []).length;
-    return count === 0 ? "PC" : `R-${count}`;
+  const getScheduledLabel = (block: QuestionBlock) => {
+    const completedReviews = reviewsByBlock[block.id]?.length ?? 0;
+    return block.next_review_date <= block.study_date ? "PC" : `R-${completedReviews + 1}`;
   };
 
   const getEventsForDay = (dayStr: string): CalendarEvent[] => {
+    const completed = reviewsByDate[dayStr] ?? [];
+    const completedBlockIds = new Set(completed.map(review => review.block_id));
     const events: CalendarEvent[] = [];
-    const completedOnDay = sessionsByDate[dayStr] || [];
-    const completedThemeIds = new Set(completedOnDay.map(s => s.theme_id));
 
-    // Completed sessions on this day → green filled
-    completedOnDay.forEach(s => {
-      const theme = themes.find(t => t.id === s.theme_id);
-      if (!theme) return;
-      const idx = (sessionsByTheme[s.theme_id] || []).findIndex(x => x.id === s.id);
-      events.push({
-        type: "completed",
-        label: idx === 0 ? "PC" : `R-${idx}`,
-        theme,
-        sessionId: s.id,
-      });
+    blocks.forEach(block => {
+      if (block.study_date !== dayStr) return;
+      events.push({ type: "first-contact", label: "PC", block, date: dayStr });
     });
 
-    // Themes whose next_review_date = this day and not yet completed today
-    themes.forEach(theme => {
-      if (theme.next_review_date !== dayStr) return;
-      if (completedThemeIds.has(theme.id)) return;
-      events.push({
-        type: dayStr < todayStr ? "missed" : "scheduled",
-        label: getThemeLabel(theme.id),
-        theme,
-      });
+    completed.forEach(review => {
+      const block = blocks.find(item => item.id === review.block_id);
+      if (!block) return;
+      events.push({ type: "completed", label: `R-${Math.max(1, reviewsByBlock[block.id].findIndex(item => item.id === review.id) + 1)}`, block, date: dayStr });
+    });
+
+    blocks.forEach(block => {
+      if (block.next_review_date !== dayStr || completedBlockIds.has(block.id)) return;
+      events.push({ type: dayStr < todayStr ? "missed" : "scheduled", label: getScheduledLabel(block), block, date: dayStr });
     });
 
     return events;
   };
 
-  // Build calendar grid (Sun → Sat)
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
   const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
   const calDays = eachDayOfInterval({ start: calStart, end: calEnd });
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-full min-h-screen text-gray-400 text-sm">
-      Carregando...
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-gray-400">
+        Carregando...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       {errorMsg && (
-        <div className="bg-red-50 border-b border-red-200 text-red-700 px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+        <div className="sticky top-0 z-40 flex items-center justify-between border-b border-red-200 bg-red-50 px-6 py-3 text-red-700">
           <span className="text-sm font-medium">{errorMsg}</span>
           <button onClick={() => setErrorMsg(null)}><X size={16} /></button>
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+      <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Calendário</h1>
-          <button
-            onClick={() => setThemePickerOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-xl transition-colors text-sm shadow-sm"
-          >
-            <Plus size={17} /> Sessão de Estudo
-          </button>
+          <p className="mt-1 text-sm text-gray-500">PC marca primeiro contato; R-n marca revisões agendadas ou registradas.</p>
         </div>
 
-        {/* Calendar card */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-
-          {/* Month navigation */}
-          <div className="flex items-center justify-center py-5 border-b border-gray-100 gap-6">
-            <button
-              onClick={() => setCurrentDate(d => subMonths(d, 1))}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-            >
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+          <div className="flex items-center justify-center gap-6 border-b border-gray-100 py-5">
+            <button onClick={() => setCurrentDate(date => subMonths(date, 1))} className="rounded-lg p-1.5 transition-colors hover:bg-gray-100">
               <ChevronLeft size={18} className="text-gray-600" />
             </button>
-            <h2 className="text-lg font-bold text-gray-900 capitalize w-52 text-center">
+            <h2 className="w-52 text-center text-lg font-bold capitalize text-gray-900">
               {format(currentDate, "MMMM 'de' yyyy", { locale: ptBR })}
             </h2>
-            <button
-              onClick={() => setCurrentDate(d => addMonths(d, 1))}
-              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-            >
+            <button onClick={() => setCurrentDate(date => addMonths(date, 1))} className="rounded-lg p-1.5 transition-colors hover:bg-gray-100">
               <ChevronRight size={18} className="text-gray-600" />
             </button>
           </div>
 
-          {/* Legend */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 px-6 py-3 border-b border-gray-100">
-            <span className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="inline-block w-4 h-3 rounded border border-green-500 bg-white shrink-0" />
-              Revisão agendada
-            </span>
-            <span className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="inline-block w-4 h-3 rounded bg-green-500 shrink-0" />
-              Revisão concluída
-            </span>
-            <span className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="inline-block w-4 h-3 rounded border border-red-400 bg-white shrink-0" />
-              Revisão atrasada
-            </span>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-gray-100 px-6 py-3">
+            <Legend tone="first-contact" label="Primeiro contato" />
+            <Legend tone="scheduled" label="Agendada" />
+            <Legend tone="completed" label="Concluída" />
+            <Legend tone="missed" label="Atrasada" />
           </div>
 
-          {/* Day-of-week headers */}
           <div className="grid grid-cols-7 border-b border-gray-100">
-            {["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."].map(d => (
-              <div key={d} className="text-center text-xs font-semibold uppercase tracking-wide text-gray-400 py-3">
-                {d}
-              </div>
+            {["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."].map(day => (
+              <div key={day} className="py-3 text-center text-xs font-semibold uppercase tracking-wide text-gray-400">{day}</div>
             ))}
           </div>
 
-          {/* Calendar grid */}
           <div className="grid grid-cols-7 border-l border-t border-gray-100">
             {calDays.map(day => {
               const dayStr = format(day, "yyyy-MM-dd");
+              const events = getEventsForDay(dayStr);
               const inMonth = isSameMonth(day, currentDate);
               const isToday = dayStr === todayStr;
-              const events = getEventsForDay(dayStr);
 
               return (
-                <div
-                  key={dayStr}
-                  className={`border-r border-b border-gray-100 p-1.5 min-h-[110px] ${
-                    !inMonth ? "bg-gray-50/60" : ""
-                  }`}
-                >
-                  {/* Day number */}
-                  <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-1 ${
-                    isToday
-                      ? "bg-blue-600 text-white"
-                      : inMonth
-                      ? "text-gray-700"
-                      : "text-gray-300"
-                  }`}>
+                <div key={dayStr} className={`min-h-[112px] border-b border-r border-gray-100 p-1.5 ${!inMonth ? "bg-gray-50/60" : ""}`}>
+                  <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${isToday ? "bg-blue-600 text-white" : inMonth ? "text-gray-700" : "text-gray-300"}`}>
                     {format(day, "d")}
                   </div>
-
-                  {/* Event chips */}
                   <div className="space-y-0.5">
-                    {events.slice(0, 4).map((event, i) => (
+                    {events.slice(0, 4).map((event, index) => (
                       <button
-                        key={i}
-                        onClick={() => event.type !== "completed" ? openStudyModal(event.theme) : undefined}
-                        disabled={event.type === "completed"}
-                        title={`${event.label} | ${event.theme.title}`}
-                        className={`w-full text-left text-[10px] font-semibold px-1.5 py-[3px] rounded truncate leading-[14px] transition-colors ${
-                          event.type === "completed"
-                            ? "bg-green-500 text-white cursor-default"
-                            : event.type === "missed"
-                            ? "border border-red-400 text-red-600 bg-white hover:bg-red-50"
-                            : "border border-green-500 text-green-700 bg-white hover:bg-green-50"
-                        }`}
+                        key={`${event.block.id}-${event.type}-${index}`}
+                        onClick={() => event.type !== "completed" && event.type !== "first-contact" && setActionOpen(event)}
+                        disabled={event.type === "completed" || event.type === "first-contact"}
+                        title={`${event.label} | ${event.block.title}`}
+                        className={`w-full truncate rounded px-1.5 py-[3px] text-left text-[10px] font-semibold leading-[14px] transition-colors ${eventClass(event.type)}`}
                       >
-                        {event.label} | {event.theme.title}
+                        {event.label} | {event.block.title}
                       </button>
                     ))}
-                    {events.length > 4 && (
-                      <div className="text-[10px] text-gray-400 text-center pt-0.5">
-                        +{events.length - 4} mais
-                      </div>
-                    )}
+                    {events.length > 4 && <div className="pt-0.5 text-center text-[10px] text-gray-400">+{events.length - 4}</div>}
                   </div>
                 </div>
               );
@@ -353,104 +355,111 @@ export default function CalendarioPage() {
         </div>
       </div>
 
-      {/* MODAL: Theme Picker */}
-      {themePickerOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="text-lg font-bold mb-1">Nova Sessão de Estudo</h3>
-            <p className="text-sm text-gray-500 mb-5">Qual tema você vai registrar?</p>
-            <select
-              value={selectedThemeId}
-              onChange={e => setSelectedThemeId(e.target.value)}
-              className="w-full border border-gray-300 rounded-xl p-3 bg-white text-sm mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">— Selecionar tema —</option>
-              {themes.map(t => (
-                <option key={t.id} value={t.id}>{t.title} · {t.area}</option>
-              ))}
-            </select>
-            <div className="flex justify-end gap-2">
+      {actionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">{actionOpen.label} | {actionOpen.block.title}</h3>
+                <p className="mt-1 text-sm text-gray-500">Agendada para {formatDateLabel(actionOpen.date)}</p>
+              </div>
+              <button onClick={() => setActionOpen(null)} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X size={18} /></button>
+            </div>
+
+            <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => { setThemePickerOpen(false); setSelectedThemeId(""); }}
-                className="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm font-medium"
+                onClick={() => openReview(actionOpen.block, actionOpen.date)}
+                disabled={actionOpen.date > todayStr}
+                className="flex w-full items-center justify-between rounded-lg border border-gray-200 px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Cancelar
+                <span>
+                  <span className="block text-sm font-semibold text-gray-900">Registrar revisão</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">Salva o desempenho e calcula a próxima data pelo SM-2.</span>
+                </span>
+                <Play size={16} className="text-green-600" />
               </button>
+
               <button
-                onClick={handleThemePickerContinue}
-                disabled={!selectedThemeId}
-                className="flex items-center gap-1.5 px-5 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-40 text-sm font-semibold transition-colors"
+                type="button"
+                onClick={() => openReschedule(actionOpen)}
+                className="w-full rounded-lg border border-blue-200 px-4 py-3 text-left transition-colors hover:bg-blue-50"
               >
-                Continuar <ChevronRight size={15} />
+                <span className="block text-sm font-semibold text-gray-900">Remarcar revisão</span>
+                <span className="mt-0.5 block text-xs text-gray-500">Move esta revisão no app e atualiza o mesmo evento no Google Calendar.</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: Study Session */}
-      {studyOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <h3 className="text-lg font-bold mb-1">Sessão de Estudos</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Avaliando: <span className="font-semibold text-gray-900">{studyOpen.title}</span>
-            </p>
-            <form onSubmit={submitStudySession} className="space-y-5">
+      {rescheduleOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Data do Estudo</label>
+                <h3 className="text-lg font-bold text-gray-900">Remarcar revisão</h3>
+                <p className="mt-1 text-sm text-gray-500">{rescheduleOpen.label} | {rescheduleOpen.block.title}</p>
+              </div>
+              <button onClick={() => setRescheduleOpen(null)} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X size={18} /></button>
+            </div>
+
+            <form onSubmit={submitReschedule} className="space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-gray-700">Nova data</span>
                 <input
                   type="date"
-                  value={studyDate}
-                  onChange={e => setStudyDate(e.target.value)}
-                  max={format(new Date(), "yyyy-MM-dd")}
-                  className="w-full border border-gray-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={rescheduleDate}
+                  min={rescheduleOpen.block.study_date}
+                  onChange={event => setRescheduleDate(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </label>
+
+              <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">
+                O evento existente do Google Calendar será movido. Não será criado um segundo evento.
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Porcentagem de Acerto ({accuracy}%)
-                </label>
-                <input
-                  type="range" min="0" max="100" value={accuracy}
-                  onChange={e => setAccuracy(Number(e.target.value))}
-                  className="w-full accent-blue-600"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>0%</span>
-                  <span className="font-bold text-blue-600 text-sm">{accuracy}%</span>
-                  <span>100%</span>
-                </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setRescheduleOpen(null)} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Cancelar</button>
+                <button type="submit" disabled={submitting || !rescheduleDate} className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50">
+                  {submitting ? "Salvando..." : "Remarcar"}
+                </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {reviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Facilidade do Tema</label>
-                <select
-                  value={easiness}
-                  onChange={e => setEasiness(e.target.value)}
-                  className="w-full border border-gray-300 rounded-xl p-3 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option>Muito Fácil</option>
-                  <option>Fácil</option>
-                  <option>Médio</option>
-                  <option>Difícil</option>
-                  <option>Muito Difícil</option>
+                <h3 className="text-lg font-bold text-gray-900">Registrar revisão</h3>
+                <p className="mt-1 text-sm text-gray-500">{reviewOpen.title}</p>
+              </div>
+              <button onClick={() => setReviewOpen(null)} className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"><X size={18} /></button>
+            </div>
+            <form onSubmit={submitReview} className="space-y-4">
+              <input type="date" value={reviewDate} max={todayStr} onChange={event => setReviewDate(event.target.value)} className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <div className="grid grid-cols-2 gap-3">
+                <NumberField label="Questões" value={questionCount} min={1} onChange={setQuestionCount} />
+                <NumberField label="Acertos" value={correctCount} min={0} max={questionCount} onChange={setCorrectCount} />
+              </div>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-gray-700">Dificuldade</span>
+                <select value={difficulty} onChange={event => setDifficulty(event.target.value as DifficultyRating)} className="w-full rounded-lg border border-gray-300 bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  {difficultyOptions.map(option => <option key={option}>{option}</option>)}
                 </select>
+              </label>
+              <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+                Acurácia calculada: <span className="font-semibold text-gray-900">{calculateAccuracy(correctCount, questionCount)}%</span>
               </div>
               <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setStudyOpen(null)}
-                  className="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm font-medium"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 text-sm font-semibold transition-colors"
-                >
-                  <Play size={15} /> {submitting ? "Salvando..." : "Concluir Sessão"}
+                <button type="button" onClick={() => setReviewOpen(null)} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Cancelar</button>
+                <button type="submit" disabled={submitting || correctCount > questionCount} className="flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
+                  <Play size={15} /> {submitting ? "Salvando..." : "Salvar revisão"}
                 </button>
               </div>
             </form>
@@ -458,5 +467,41 @@ export default function CalendarioPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function Legend({ tone, label }: { tone: CalendarEvent["type"]; label: string }) {
+  return (
+    <span className="flex items-center gap-2 text-xs text-gray-500">
+      <span className={`inline-block h-3 w-4 rounded ${legendClass(tone)}`} />
+      {label}
+    </span>
+  );
+}
+
+function formatDateLabel(date: string) {
+  return format(new Date(`${date}T00:00:00`), "dd/MM/yyyy");
+}
+
+function eventClass(type: CalendarEvent["type"]) {
+  if (type === "first-contact") return "bg-blue-600 text-white cursor-default";
+  if (type === "completed") return "bg-green-500 text-white cursor-default";
+  if (type === "missed") return "border border-red-400 bg-white text-red-600 hover:bg-red-50";
+  return "border border-green-500 bg-white text-green-700 hover:bg-green-50";
+}
+
+function legendClass(type: CalendarEvent["type"]) {
+  if (type === "first-contact") return "bg-blue-600";
+  if (type === "completed") return "bg-green-500";
+  if (type === "missed") return "border border-red-400 bg-white";
+  return "border border-green-500 bg-white";
+}
+
+function NumberField({ label, value, min, max, onChange }: { label: string; value: number; min: number; max?: number; onChange: (value: number) => void }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-medium text-gray-700">{label}</span>
+      <input type="number" value={value} min={min} max={max} onChange={event => onChange(Number(event.target.value))} className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+    </label>
   );
 }
