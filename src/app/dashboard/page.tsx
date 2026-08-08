@@ -1,432 +1,342 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Session } from "@supabase/supabase-js";
-import {
-  addDays,
-  differenceInDays,
-  eachDayOfInterval,
-  format,
-  startOfDay,
-  startOfWeek,
-} from "date-fns";
+import { addDays, eachDayOfInterval, format, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertCircle, ArrowRight, Clock, Play, Plus, X } from "lucide-react";
 import {
-  calendarSyncPatchFromResult,
-} from "@/lib/calendar";
-import { createOrUpdateCalendarEventWithAuth } from "@/lib/calendar-auth";
-import type { DifficultyRating, QuestionBlock } from "@/lib/database.types";
-import { getGoogleProviderToken, persistGoogleProviderToken } from "@/lib/google-provider-token";
-import { calculateAccuracy, calculateBlockReview } from "@/lib/sm2";
+  ArrowRight,
+  BarChart3,
+  CalendarDays,
+  CalendarPlus,
+  Check,
+  Clock3,
+  Play,
+  Plus,
+  Stethoscope,
+} from "lucide-react";
+import { OnboardingPanel } from "@/components/onboarding-panel";
+import { ReviewModal } from "@/components/review-modal";
+import { ScheduleReviewModal } from "@/components/schedule-review-modal";
+import { updateQuestionBlockAndSync } from "@/lib/calendar-sync";
+import type { QuestionBlock, StudentProfile } from "@/lib/database.types";
+import { persistGoogleProviderToken } from "@/lib/google-provider-token";
+import {
+  buildWeeklyPlan,
+  importanceLabel,
+  performanceLabel,
+  type WeeklyPlanItem,
+} from "@/lib/revision-engine";
 import { supabase } from "@/lib/supabase";
 
-const difficultyOptions: DifficultyRating[] = [
-  "Muito fácil",
-  "Fácil",
-  "Médio",
-  "Difícil",
-  "Muito difícil",
-];
+type ScheduleContext = {
+  block: QuestionBlock;
+  minDate: string;
+  maxDate: string;
+} | null;
 
-export default function HomePage() {
+type CompletedReview = {
+  block_id: string;
+  review_date: string;
+};
+
+export default function HomeDashboardPage() {
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [blocks, setBlocks] = useState<QuestionBlock[]>([]);
+  const [completedReviews, setCompletedReviews] = useState<CompletedReview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState<QuestionBlock | null>(null);
-  const [reviewDate, setReviewDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [questionCount, setQuestionCount] = useState(20);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [difficulty, setDifficulty] = useState<DifficultyRating>("Médio");
-  const [timeSpent, setTimeSpent] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [reviewBlock, setReviewBlock] = useState<QuestionBlock | null>(null);
+  const [scheduleContext, setScheduleContext] = useState<ScheduleContext>(null);
 
-  const showError = useCallback((msg: string) => {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(null), 6000);
+  const today = format(new Date(), "yyyy-MM-dd");
+
+  const loadData = useCallback(async (userId: string) => {
+    const weekStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const weekStart = format(weekStartDate, "yyyy-MM-dd");
+    const weekEnd = format(addDays(weekStartDate, 6), "yyyy-MM-dd");
+    const [profileResult, blocksResult, reviewsResult] = await Promise.all([
+      supabase.from("student_profiles").select("*").eq("user_id", userId).maybeSingle(),
+      supabase.from("question_blocks").select("*").eq("user_id", userId).order("next_review_date", { ascending: true }),
+      supabase.from("block_reviews").select("block_id,review_date").eq("user_id", userId).gte("review_date", weekStart).lte("review_date", weekEnd),
+    ]);
+
+    if (profileResult.error || blocksResult.error || reviewsResult.error) {
+      setError("Não foi possível carregar sua semana.");
+    }
+    const nextProfile = profileResult.data ?? null;
+    setProfile(nextProfile);
+    setBlocks(blocksResult.data ?? []);
+    setCompletedReviews(reviewsResult.data ?? []);
+    setLoading(false);
   }, []);
 
-  const fetchBlocks = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from("question_blocks")
-      .select("*")
-      .eq("user_id", userId)
-      .order("next_review_date", { ascending: true });
-
-    if (error) showError("Erro ao carregar blocos. Tente recarregar a página.");
-    else setBlocks(data ?? []);
-    setLoading(false);
-  }, [showError]);
-
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      persistGoogleProviderToken(session);
-      setSession(session);
-      if (session) fetchBlocks(session.user.id);
+    supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
+      persistGoogleProviderToken(activeSession);
+      setSession(activeSession);
+      if (activeSession) loadData(activeSession.user.id);
       else setLoading(false);
     });
-  }, [fetchBlocks]);
+  }, [loadData]);
 
-  const getValidToken = async () => {
-    const { data: { session: freshSession } } = await supabase.auth.getSession();
-    if (freshSession) {
-      persistGoogleProviderToken(freshSession);
-      setSession(freshSession);
-    }
-    return getGoogleProviderToken();
-  };
-
-  const openReviewModal = (block: QuestionBlock) => {
-    setReviewOpen(block);
-    setReviewDate(format(new Date(), "yyyy-MM-dd"));
-    setQuestionCount(block.question_count);
-    setCorrectCount(block.correct_count);
-    setDifficulty(block.perceived_difficulty);
-    setTimeSpent(block.time_spent_minutes?.toString() ?? "");
-  };
-
-  const submitReview = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!reviewOpen || !session || correctCount > questionCount) return;
-    setSubmitting(true);
-
-    const selectedDate = startOfDay(new Date(`${reviewDate}T00:00:00`));
-    const scheduledDate = startOfDay(new Date(`${reviewOpen.next_review_date}T00:00:00`));
-    const daysDelayed = differenceInDays(selectedDate, scheduledDate);
-    const accuracy = calculateAccuracy(correctCount, questionCount);
-    const result = calculateBlockReview({
-      accuracy,
-      perceivedDifficulty: difficulty,
-      repetitions: reviewOpen.repetitions,
-      previousInterval: reviewOpen.interval_days,
-      previousEF: reviewOpen.easiness_factor,
-      daysDelayed,
-      priorityWeight: reviewOpen.priority_weight,
+  const plan = useMemo(() => {
+    if (!profile) return null;
+    return buildWeeklyPlan({
+      blocks,
+      studyDays: profile.study_days,
+      dailyCapacity: profile.daily_theme_capacity,
+      referenceDate: today,
+      examDate: profile.exam_date,
     });
+  }, [blocks, profile, today]);
 
-    const nextReviewDate = format(addDays(selectedDate, result.intervalDays), "yyyy-MM-dd");
+  const backlogUpdateSignature = plan?.backlogUpdates
+    .map(update => `${update.id}:${update.backlog_since}:${update.backlog_urgency}`)
+    .join("|") ?? "";
+  const scheduleUpdateSignature = plan?.scheduleUpdates
+    .map(update => `${update.id}:${update.planned_review_date ?? "none"}:${update.planning_source ?? "none"}`)
+    .join("|") ?? "";
 
-    const { error: reviewError } = await supabase.from("block_reviews").insert({
-      block_id: reviewOpen.id,
-      user_id: session.user.id,
-      review_date: reviewDate,
-      question_count: questionCount,
-      correct_count: correctCount,
-      accuracy_percentage: accuracy,
-      perceived_difficulty: difficulty,
-      time_spent_minutes: timeSpent ? Number(timeSpent) : null,
-      sm2_grade_calculated: result.q,
-      previous_next_review_date: reviewOpen.next_review_date,
-      new_next_review_date: nextReviewDate,
-    });
+  useEffect(() => {
+    if (!session || !plan || (plan.backlogUpdates.length === 0 && plan.scheduleUpdates.length === 0)) return;
+    let cancelled = false;
 
-    if (reviewError) {
-      showError("Erro ao salvar revisão. Verifique os dados e tente novamente.");
-      setSubmitting(false);
-      return;
-    }
-
-    let calendarPatch = {};
-    if (reviewOpen.calendar_sync_enabled) {
-      await getValidToken();
-      const syncResult = await createOrUpdateCalendarEventWithAuth({
-        eventId: reviewOpen.calendar_event_id,
-        summary: reviewOpen.title,
-        description: [
-          `Área: ${reviewOpen.area_name}`,
-          `Questões: ${questionCount}`,
-          `Acertos: ${correctCount} (${accuracy}%)`,
-          `Próxima revisão calculada para ${nextReviewDate}.`,
-        ].join("\n"),
-        date: nextReviewDate,
+    const changesByBlock = new Map<string, Partial<QuestionBlock>>();
+    for (const update of plan.backlogUpdates) {
+      changesByBlock.set(update.id, {
+        ...changesByBlock.get(update.id),
+        backlog_since: update.backlog_since,
+        backlog_urgency: update.backlog_urgency,
       });
-      calendarPatch = calendarSyncPatchFromResult(syncResult);
+    }
+    for (const update of plan.scheduleUpdates) {
+      changesByBlock.set(update.id, {
+        ...changesByBlock.get(update.id),
+        planned_review_date: update.planned_review_date,
+        planning_source: update.planning_source,
+      });
     }
 
-    const { error: updateError } = await supabase
-      .from("question_blocks")
-      .update({
-        question_count: questionCount,
-        correct_count: correctCount,
-        accuracy_percentage: accuracy,
-        perceived_difficulty: difficulty,
-        time_spent_minutes: timeSpent ? Number(timeSpent) : null,
-        repetitions: result.repetitions,
-        easiness_factor: result.easinessFactor,
-        interval_days: result.intervalDays,
-        next_review_date: nextReviewDate,
-        ...calendarPatch,
+    Promise.all([...changesByBlock.entries()].map(([blockId, changes]) => updateQuestionBlockAndSync({
+      blockId,
+      userId: session.user.id,
+      changes,
+    })))
+      .then(results => {
+        if (cancelled) return;
+        if (results.some(result => !result.calendar.ok)) {
+          setError("A semana foi atualizada, mas o Google Calendar ainda tem alterações pendentes. A MetaMed tentará novamente automaticamente.");
+        }
+        setBlocks(current => current.map(block => {
+          const backlogUpdate = plan.backlogUpdates.find(item => item.id === block.id);
+          const scheduleUpdate = plan.scheduleUpdates.find(item => item.id === block.id);
+          return { ...block, ...backlogUpdate, ...scheduleUpdate };
+        }));
       })
-      .eq("id", reviewOpen.id);
+      .catch(() => {
+        if (!cancelled) setError("A semana foi calculada, mas não foi possível atualizar toda a fila de atrasados.");
+      });
 
-    if (updateError) showError("A revisão foi salva, mas o bloco não foi atualizado.");
+    return () => { cancelled = true; };
+  }, [backlogUpdateSignature, plan, scheduleUpdateSignature, session]);
 
-    setReviewOpen(null);
-    setSubmitting(false);
-    fetchBlocks(session.user.id);
-  };
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-gray-400">
-        Carregando...
-      </div>
-    );
+  if (loading) return <div className="flex min-h-[60vh] items-center justify-center text-sm text-gray-500">Montando sua semana...</div>;
+  if (!session) return null;
+  if (!profile?.onboarding_completed) {
+    return <OnboardingPanel userId={session.user.id} profile={profile} onSaved={saved => {
+      setProfile(saved);
+    }} />;
   }
+  if (!plan) return null;
 
-  const todayStr = format(startOfDay(new Date()), "yyyy-MM-dd");
-  const todayBlocks = blocks.filter(block => block.next_review_date === todayStr);
-  const overdueBlocks = blocks.filter(block => block.next_review_date < todayStr);
-  const upcomingBlocks = blocks.filter(block => block.next_review_date > todayStr).slice(0, 8);
-  const totalQuestions = blocks.reduce((sum, block) => sum + block.question_count, 0);
-  const averageAccuracy = blocks.length
-    ? Math.round(blocks.reduce((sum, block) => sum + block.accuracy_percentage, 0) / blocks.length)
-    : 0;
+  const firstName = profile.preferred_name
+    ?? session.user.user_metadata?.full_name?.split(" ")[0]
+    ?? session.user.email?.split("@")[0]
+    ?? "Estudante";
+  const completedByBlock = new Map(completedReviews.map(review => [review.block_id, review.review_date]));
+  const completedBlocks = blocks.filter(block => completedByBlock.has(block.id));
+  const completedIds = new Set(completedBlocks.map(block => block.id));
+  const todoItems = uniqueItems([...plan.preExam, ...plan.selected]).filter(item => !completedIds.has(item.block.id));
+  const backlogItems = plan.backlog.filter(item => !completedIds.has(item.block.id));
 
-  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-  const weekDays = eachDayOfInterval({ start: weekStart, end: addDays(weekStart, 6) }).map(date => {
-    const dateStr = format(date, "yyyy-MM-dd");
-    return {
-      dateStr,
-      label: format(date, "EEE", { locale: ptBR }),
-      dayNum: format(date, "d"),
-      blocks: blocks.filter(block => block.next_review_date === dateStr),
-      isToday: dateStr === todayStr,
-      isPast: dateStr < todayStr,
-    };
+  const openSchedule = (block: QuestionBlock) => setScheduleContext({
+    block,
+    minDate: block.pre_exam_review_requested ? today : plan.weekStart,
+    maxDate: block.pre_exam_review_requested ? profile.exam_date ?? plan.weekEnd : plan.weekEnd,
   });
 
-  const firstName =
-    session?.user.user_metadata?.full_name?.split(" ")[0] ??
-    session?.user.email?.split("@")[0] ??
-    "Estudante";
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {errorMsg && (
-        <div className="sticky top-0 z-40 flex items-center justify-between border-b border-red-200 bg-red-50 px-6 py-3 text-red-700">
-          <span className="text-sm font-medium">{errorMsg}</span>
-          <button onClick={() => setErrorMsg(null)}><X size={16} /></button>
+    <div className="page-shell">
+      {error && <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      <header className="page-header mb-5 sm:items-center">
+        <h1 className="page-title mt-0">Sua semana, {firstName}</h1>
+        <Link href="/dashboard/blocos" className="button-primary"><Plus size={16} /> Novo tema</Link>
+      </header>
+
+      {blocks.length === 0 ? (
+        <div className="empty-state min-h-64">
+          <Stethoscope size={25} />
+          <p>Seu planejamento começa quando você cadastra um tema já estudado.</p>
+          <Link href="/dashboard/blocos" className="button-primary"><Plus size={15} /> Cadastrar primeiro tema</Link>
         </div>
+      ) : (
+        <>
+          <WeekStrip todo={todoItems} completed={completedBlocks} completedByBlock={completedByBlock} weekStart={plan.weekStart} studyDays={profile.study_days} />
+
+          <div className="mt-6 grid gap-5 lg:grid-cols-3">
+            <TaskColumn title="Feitos" count={completedBlocks.length} icon={<Check size={16} />} tone="done">
+              {completedBlocks.length === 0 ? <InlineEmpty>Nenhuma revisão concluída nesta semana.</InlineEmpty> : completedBlocks.map(block => (
+                <TopicRow key={block.id} block={block} completedDate={completedByBlock.get(block.id)} />
+              ))}
+            </TaskColumn>
+
+            <TaskColumn title="Por fazer" count={todoItems.length} icon={<Clock3 size={16} />} tone="todo">
+              {todoItems.length === 0 ? <InlineEmpty>Você concluiu todas as revisões da semana.</InlineEmpty> : todoItems.map(item => (
+                <TopicRow key={item.block.id} block={item.block} item={item} onSchedule={() => openSchedule(item.block)} onReview={() => setReviewBlock(item.block)} />
+              ))}
+            </TaskColumn>
+
+            <TaskColumn title="Atrasados" count={backlogItems.length} icon={<CalendarPlus size={16} />} tone="late">
+              {backlogItems.length === 0 ? <InlineEmpty>Nenhum tema atrasado.</InlineEmpty> : backlogItems.map(item => (
+                <TopicRow key={item.block.id} block={item.block} item={item} onSchedule={() => openSchedule(item.block)} onReview={() => setReviewBlock(item.block)} />
+              ))}
+            </TaskColumn>
+          </div>
+        </>
       )}
 
-      <div className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-8 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold capitalize text-gray-900">Olá, {firstName}</h1>
-            <p className="mt-0.5 text-sm capitalize text-gray-500">
-              {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
-            </p>
-          </div>
-          <Link
-            href="/dashboard/blocos"
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700"
-          >
-            <Plus size={17} /> Novo bloco
-          </Link>
-        </div>
-
-        <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-4">
-          <SummaryCard label="Blocos ativos" value={blocks.length.toString()} />
-          <SummaryCard label="Questões registradas" value={totalQuestions.toString()} />
-          <SummaryCard label="Acurácia média" value={`${averageAccuracy}%`} />
-          <SummaryCard label="Vencidos" value={overdueBlocks.length.toString()} tone="danger" />
-        </div>
-
-        <div className="mb-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <QueueCard
-            title="Hoje"
-            count={todayBlocks.length}
-            icon={<span className="h-2 w-2 rounded-full bg-blue-500" />}
-            empty="Nenhum bloco para hoje."
-            blocks={todayBlocks}
-            actionTone="blue"
-            onReview={openReviewModal}
-          />
-          <QueueCard
-            title="Revisões atrasadas"
-            count={overdueBlocks.length}
-            icon={<AlertCircle size={15} className="text-red-500" />}
-            empty="Tudo em dia."
-            blocks={overdueBlocks}
-            actionTone="red"
-            onReview={openReviewModal}
-          />
-          <QueueCard
-            title="Próximas revisões"
-            icon={<Clock size={15} className="text-emerald-500" />}
-            empty="Nenhuma revisão futura."
-            blocks={upcomingBlocks}
-            actionTone="gray"
-            onReview={openReviewModal}
-          />
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-            <span className="text-sm font-semibold text-gray-800">Semana de revisão</span>
-            <Link href="/dashboard/calendario" className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700">
-              Calendário <ArrowRight size={15} />
-            </Link>
-          </div>
-          <div className="grid grid-cols-7">
-            {weekDays.map(({ dateStr, label, dayNum, blocks, isToday, isPast }) => (
-              <div key={dateStr} className={`min-h-[136px] border-r border-gray-100 p-3 last:border-r-0 ${isToday ? "bg-blue-50" : isPast ? "bg-gray-50/60" : ""}`}>
-                <div className="mb-3 text-center">
-                  <div className={`text-xs font-semibold uppercase tracking-wide ${isToday ? "text-blue-600" : "text-gray-400"}`}>{label}</div>
-                  <div className={`mt-0.5 text-xl font-bold leading-tight ${isToday ? "text-blue-700" : isPast ? "text-gray-300" : "text-gray-700"}`}>{dayNum}</div>
-                </div>
-                <div className="space-y-1">
-                  {blocks.slice(0, 4).map(block => (
-                    <button
-                      key={block.id}
-                      onClick={() => openReviewModal(block)}
-                      title={block.title}
-                      className={`w-full truncate rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-                        isToday
-                          ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
-                          : isPast
-                            ? "bg-red-100 text-red-700 hover:bg-red-200"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
-                    >
-                      {block.title}
-                    </button>
-                  ))}
-                  {blocks.length > 4 && <div className="pt-0.5 text-center text-xs text-gray-400">+{blocks.length - 4}</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        <Link href="/dashboard/calendario" className="button-secondary"><CalendarDays size={16} /> Calendário <ArrowRight size={15} /></Link>
+        <Link href="/dashboard/metricas" className="button-secondary"><BarChart3 size={16} /> Métricas <ArrowRight size={15} /></Link>
       </div>
 
-      {reviewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
-            <h3 className="mb-1 text-lg font-bold text-gray-900">Registrar revisão</h3>
-            <p className="mb-5 text-sm text-gray-500">{reviewOpen.title}</p>
-            <form onSubmit={submitReview} className="space-y-4">
-              <input type="date" value={reviewDate} max={format(new Date(), "yyyy-MM-dd")} onChange={event => setReviewDate(event.target.value)} className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-              <div className="grid grid-cols-2 gap-3">
-                <NumberField label="Questões" value={questionCount} min={1} onChange={setQuestionCount} />
-                <NumberField label="Acertos" value={correctCount} min={0} max={questionCount} onChange={setCorrectCount} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700">Dificuldade percebida</label>
-                <select value={difficulty} onChange={event => setDifficulty(event.target.value as DifficultyRating)} className="w-full rounded-lg border border-gray-300 bg-white p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                  {difficultyOptions.map(option => <option key={option}>{option}</option>)}
-                </select>
-              </div>
-              <NumberField label="Tempo em minutos" value={timeSpent} min={0} onChange={value => setTimeSpent(value.toString())} optional />
-              <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
-                Acurácia calculada: <span className="font-semibold text-gray-900">{calculateAccuracy(correctCount, questionCount)}%</span>
-              </div>
-              <div className="flex justify-end gap-2 pt-1">
-                <button type="button" onClick={() => setReviewOpen(null)} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">Cancelar</button>
-                <button type="submit" disabled={submitting || correctCount > questionCount} className="flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50">
-                  <Play size={15} /> {submitting ? "Salvando..." : "Salvar revisão"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {reviewBlock && (
+        <ReviewModal block={reviewBlock} userId={session.user.id} examDate={profile.exam_date} onClose={() => setReviewBlock(null)} onCompleted={() => loadData(session.user.id)} />
+      )}
+      {scheduleContext && (
+        <ScheduleReviewModal block={scheduleContext.block} userId={session.user.id} minDate={scheduleContext.minDate} maxDate={scheduleContext.maxDate} studyDays={profile.study_days} onClose={() => setScheduleContext(null)} onChanged={() => loadData(session.user.id)} />
       )}
     </div>
   );
 }
 
-function SummaryCard({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "danger" }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">{label}</div>
-      <div className={`mt-2 text-2xl font-bold ${tone === "danger" ? "text-red-600" : "text-gray-900"}`}>{value}</div>
-    </div>
-  );
-}
-
-function QueueCard({
-  title,
-  count,
-  icon,
-  empty,
-  blocks,
-  actionTone,
-  onReview,
+function WeekStrip({
+  todo,
+  completed,
+  completedByBlock,
+  weekStart,
+  studyDays,
 }: {
-  title: string;
-  count?: number;
-  icon: React.ReactNode;
-  empty: string;
-  blocks: QuestionBlock[];
-  actionTone: "blue" | "red" | "gray";
-  onReview: (block: QuestionBlock) => void;
+  todo: WeeklyPlanItem[];
+  completed: QuestionBlock[];
+  completedByBlock: Map<string, string>;
+  weekStart: string;
+  studyDays: number[];
 }) {
-  const buttonClass = {
-    blue: "bg-blue-600 hover:bg-blue-700 text-white",
-    red: "bg-red-500 hover:bg-red-600 text-white",
-    gray: "bg-gray-200 hover:bg-gray-300 text-gray-700",
-  }[actionTone];
-
+  const days = eachDayOfInterval({ start: new Date(`${weekStart}T12:00:00`), end: addDays(new Date(`${weekStart}T12:00:00`), 6) });
   return (
-    <div className="flex min-h-[220px] flex-col rounded-lg border border-gray-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2.5 border-b border-gray-100 px-5 py-4">
-        {icon}
-        <span className="text-sm font-semibold text-gray-800">{title}</span>
-        {count !== undefined && count > 0 && <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-100 px-1.5 text-xs font-bold text-gray-700">{count}</span>}
-      </div>
-      <div className="flex-1 p-4">
-        {blocks.length === 0 ? (
-          <div className="flex min-h-[92px] items-center justify-center text-sm text-gray-400">{empty}</div>
-        ) : (
-          <div className="max-h-72 space-y-2 overflow-y-auto">
-            {blocks.map(block => (
-              <div key={block.id} className="flex items-center gap-3 rounded-lg bg-gray-50 p-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-medium text-gray-500">{block.area_name} · {block.accuracy_percentage}%</div>
-                  <div className="truncate text-sm font-semibold text-gray-900">{block.title}</div>
-                </div>
-                <button onClick={() => onReview(block)} className={`shrink-0 rounded-md p-2 transition-colors ${buttonClass}`} title="Registrar revisão">
-                  <Play size={13} />
-                </button>
+    <section className="overflow-x-auto rounded-md border border-gray-200 bg-white" aria-label="Calendário desta semana">
+      <div className="grid min-w-[42rem] grid-cols-7 divide-x divide-gray-100">
+        {days.map(day => {
+          const date = format(day, "yyyy-MM-dd");
+          const scheduled = todo.filter(item => item.scheduledDate === date);
+          const finished = completed.filter(block => completedByBlock.get(block.id) === date);
+          const isToday = date === format(new Date(), "yyyy-MM-dd");
+          const isStudyDay = studyDays.includes(Number(format(day, "i")));
+          return (
+            <div key={date} className={`min-h-28 px-3 py-3 ${isToday ? "bg-emerald-50" : ""} ${isStudyDay ? "" : "bg-gray-50/70"}`}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className={`text-xs font-semibold capitalize ${isToday ? "text-emerald-800" : "text-gray-500"}`}>{format(day, "EEEE", { locale: ptBR })}</span>
+                <span className={`text-sm font-semibold tabular-nums ${isToday ? "text-emerald-900" : "text-gray-800"}`}>{format(day, "d")}</span>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="mt-3 space-y-1.5">
+                {finished.map(block => <div key={`done-${block.id}`} className="flex items-center gap-1.5 truncate text-xs font-medium text-emerald-700"><Check size={12} className="shrink-0" /> <span className="truncate">{block.title}</span></div>)}
+                {scheduled.map(item => <div key={item.block.id} className="truncate border-l-2 border-gray-400 pl-2 text-xs font-medium text-gray-700">{item.block.title}</div>)}
+                {finished.length === 0 && scheduled.length === 0 && <span className="text-xs text-gray-300">{isStudyDay ? "Livre" : "Fora da rotina"}</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
+    </section>
+  );
+}
+
+function TaskColumn({ title, count, icon, tone, children }: { title: string; count: number; icon: React.ReactNode; tone: "done" | "todo" | "late"; children: React.ReactNode }) {
+  const tones = {
+    done: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    todo: "border-gray-200 bg-gray-50 text-gray-800",
+    late: "border-amber-200 bg-amber-50 text-amber-800",
+  };
+  return (
+    <section className="overflow-hidden rounded-md border border-gray-200 bg-white">
+      <div className={`flex items-center justify-between border-b px-4 py-3.5 ${tones[tone]}`}>
+        <div className="flex items-center gap-2"><span>{icon}</span><h2 className="text-sm font-semibold">{title}</h2></div>
+        <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white/80 px-2 text-xs font-semibold tabular-nums">{count}</span>
+      </div>
+      <div className="divide-y divide-gray-100">{children}</div>
+    </section>
+  );
+}
+
+function TopicRow({ block, item, completedDate, onSchedule, onReview }: { block: QuestionBlock; item?: WeeklyPlanItem; completedDate?: string; onSchedule?: () => void; onReview?: () => void }) {
+  return (
+    <div className="relative flex min-h-28 gap-3 px-4 py-4">
+      <span className={`absolute bottom-0 left-0 top-0 w-1 ${areaTone(block.major_area)}`} />
+      <div className="min-w-0 flex-1 pl-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="truncate text-sm font-semibold text-gray-950">{block.title}</h3>
+          {item?.isExtra && <span className="status-badge bg-cyan-100 text-cyan-700">Extra</span>}
+          {block.pre_exam_review_requested && <span className="status-badge bg-amber-100 text-amber-800">Antes da prova</span>}
+          {block.calendar_sync_enabled && block.calendar_sync_status === "pending" && <span className="status-badge bg-gray-100 text-gray-600">Sincronizando</span>}
+          {block.calendar_sync_enabled && block.calendar_sync_status === "failed" && <span className="status-badge bg-red-100 text-red-700">Reconectar Calendar</span>}
+        </div>
+        <p className="mt-1 truncate text-xs text-gray-500">{block.major_area} · {block.specialty}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+          <span>{block.accuracy_percentage}% · {block.performance_band ? performanceLabel(block.performance_band) : "legado"}</span>
+          <span>Importância {importanceLabel(block.importance).toLocaleLowerCase("pt-BR")}</span>
+          {completedDate && <span className="font-semibold text-emerald-700">Concluído em {formatDate(completedDate)}</span>}
+          {!completedDate && item?.scheduledDate && <span className="font-semibold text-emerald-700">{formatDate(item.scheduledDate)}</span>}
+        </div>
+      </div>
+      {onSchedule && onReview && (
+        <div className="flex shrink-0 items-center gap-1">
+          <button type="button" onClick={onSchedule} title={block.planned_review_date ? "Remarcar" : "Escolher dia"} aria-label={block.planned_review_date ? "Remarcar" : "Escolher dia"} className="icon-button"><CalendarPlus size={16} /></button>
+          <button type="button" onClick={onReview} title="Registrar revisão" aria-label="Registrar revisão" className="icon-button text-emerald-700 hover:bg-emerald-50"><Play size={15} /></button>
+        </div>
+      )}
     </div>
   );
 }
 
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  optional,
-  onChange,
-}: {
-  label: string;
-  value: number | string;
-  min: number;
-  max?: number;
-  optional?: boolean;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-medium text-gray-700">{label}</span>
-      <input
-        type="number"
-        min={min}
-        max={max}
-        required={!optional}
-        value={value}
-        onChange={event => onChange(Number(event.target.value))}
-        className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-    </label>
-  );
+function InlineEmpty({ children }: { children: React.ReactNode }) {
+  return <div className="flex min-h-32 items-center justify-center px-5 text-center text-sm text-gray-400">{children}</div>;
+}
+
+function uniqueItems(items: WeeklyPlanItem[]) {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    if (seen.has(item.block.id)) return false;
+    seen.add(item.block.id);
+    return true;
+  });
+}
+
+function areaTone(area: QuestionBlock["major_area"]) {
+  return {
+    "Clínica Médica": "bg-brand-blue",
+    Cirurgia: "bg-brand-sky",
+    "Ginecologia e Obstetrícia": "bg-brand-cyan",
+    Pediatria: "bg-brand-teal",
+    Preventiva: "bg-brand-mint",
+    "A classificar": "bg-gray-400",
+  }[area];
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
 }

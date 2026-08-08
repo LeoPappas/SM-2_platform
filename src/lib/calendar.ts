@@ -21,6 +21,15 @@ export type CalendarSyncResult =
       status?: number;
     };
 
+export type CalendarDeleteResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code: CalendarSyncErrorCode;
+      message: string;
+      status?: number;
+    };
+
 type GoogleCalendarError = {
   error?: {
     code?: number;
@@ -105,7 +114,23 @@ export function calendarSyncDisabledPatch() {
     calendar_sync_enabled: false,
     calendar_sync_status: "disabled" as CalendarSyncStatus,
     calendar_last_error: null,
+    calendar_sync_fingerprint: null,
   };
+}
+
+export function calendarSyncClearedPatch(fingerprint: string) {
+  return {
+    calendar_event_id: null,
+    calendar_sync_enabled: true,
+    calendar_sync_status: "synced" as CalendarSyncStatus,
+    calendar_last_error: null,
+    calendar_last_synced_at: new Date().toISOString(),
+    calendar_sync_fingerprint: fingerprint,
+  };
+}
+
+export function stableCalendarEventId(blockId: string) {
+  return `metamed${blockId.toLowerCase().replace(/[^a-v0-9]/g, "")}`;
 }
 
 export function calendarSyncPatchFromResult(result: CalendarSyncResult) {
@@ -119,23 +144,22 @@ export async function createOrUpdateCalendarEvent({
   summary,
   description,
   date,
+  stableEventId,
+  blockId,
 }: {
   providerToken: string;
   eventId?: string | null;
   summary: string;
   description: string;
   date: string;
+  stableEventId?: string;
+  blockId?: string;
 }): Promise<CalendarSyncResult> {
-  const url = eventId
-    ? `https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`
-    : calendarEventsUrl;
-
-  const method = eventId ? "PUT" : "POST";
-
   const event = {
     summary: `Revisar bloco: ${summary}`,
     description,
     transparency: "transparent",
+    extendedProperties: blockId ? { private: { metamedBlockId: blockId } } : undefined,
     start: {
       date,
     },
@@ -146,24 +170,68 @@ export async function createOrUpdateCalendarEvent({
   };
 
   try {
-    const response = await fetch(url, {
-      method,
+    const writeEvent = async (targetEventId?: string | null, includeStableId = true) => fetch(
+      targetEventId
+        ? `${calendarEventsUrl}/${encodeURIComponent(targetEventId)}`
+        : calendarEventsUrl,
+      {
+      method: targetEventId ? "PATCH" : "POST",
       headers: {
         Authorization: `Bearer ${providerToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(event),
+      body: JSON.stringify(targetEventId ? event : { ...event, id: includeStableId ? stableEventId : undefined }),
     });
 
-    if (!response.ok && eventId && (response.status === 404 || response.status === 410)) {
-      const fallbackResponse = await fetch(calendarEventsUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${providerToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(event),
+    const findExistingEvent = async (): Promise<CalendarSyncResult | string | null> => {
+      if (!blockId) return null;
+      const query = new URLSearchParams({
+        privateExtendedProperty: `metamedBlockId=${blockId}`,
+        showDeleted: "false",
+        singleEvents: "true",
+        maxResults: "1",
       });
+      const lookupResponse = await fetch(`${calendarEventsUrl}?${query}`, {
+        headers: { Authorization: `Bearer ${providerToken}` },
+      });
+      if (!lookupResponse.ok) return calendarFailure(lookupResponse.status, await readGoogleError(lookupResponse));
+      const lookupData = await lookupResponse.json() as { items?: Array<{ id?: string }> };
+      return lookupData.items?.[0]?.id ?? null;
+    };
+
+    let targetEventId = eventId;
+    if (!targetEventId) {
+      const existing = await findExistingEvent();
+      if (typeof existing === "object" && existing?.ok === false) return existing;
+      if (typeof existing === "string") targetEventId = existing;
+    }
+
+    const response = await writeEvent(targetEventId);
+
+    if (!response.ok && targetEventId && (response.status === 404 || response.status === 410)) {
+      const existing = await findExistingEvent();
+      if (typeof existing === "object" && existing?.ok === false) return existing;
+      if (typeof existing === "string" && existing !== targetEventId) {
+        const recoveredResponse = await writeEvent(existing);
+        if (!recoveredResponse.ok) return calendarFailure(recoveredResponse.status, await readGoogleError(recoveredResponse));
+        const recoveredData = await recoveredResponse.json();
+        return { ok: true, eventId: recoveredData.id as string, recreated: true };
+      }
+
+      const fallbackResponse = await writeEvent(null);
+
+      if (fallbackResponse.status === 409 && stableEventId) {
+        const retryResponse = await writeEvent(stableEventId);
+        if (!retryResponse.ok && (retryResponse.status === 404 || retryResponse.status === 410)) {
+          const generatedResponse = await writeEvent(null, false);
+          if (!generatedResponse.ok) return calendarFailure(generatedResponse.status, await readGoogleError(generatedResponse));
+          const generatedData = await generatedResponse.json();
+          return { ok: true, eventId: generatedData.id as string, recreated: true };
+        }
+        if (!retryResponse.ok) return calendarFailure(retryResponse.status, await readGoogleError(retryResponse));
+        const retryData = await retryResponse.json();
+        return { ok: true, eventId: retryData.id as string, recreated: true };
+      }
 
       if (!fallbackResponse.ok) {
         return calendarFailure(fallbackResponse.status, await readGoogleError(fallbackResponse));
@@ -171,6 +239,19 @@ export async function createOrUpdateCalendarEvent({
 
       const data = await fallbackResponse.json();
       return { ok: true, eventId: data.id as string, recreated: true };
+    }
+
+    if (!response.ok && !targetEventId && response.status === 409 && stableEventId) {
+      const retryResponse = await writeEvent(stableEventId);
+      if (!retryResponse.ok && (retryResponse.status === 404 || retryResponse.status === 410)) {
+        const generatedResponse = await writeEvent(null, false);
+        if (!generatedResponse.ok) return calendarFailure(generatedResponse.status, await readGoogleError(generatedResponse));
+        const generatedData = await generatedResponse.json();
+        return { ok: true, eventId: generatedData.id as string, recreated: false };
+      }
+      if (!retryResponse.ok) return calendarFailure(retryResponse.status, await readGoogleError(retryResponse));
+      const retryData = await retryResponse.json();
+      return { ok: true, eventId: retryData.id as string, recreated: false };
     }
 
     if (!response.ok) {
@@ -194,12 +275,21 @@ export async function deleteCalendarEvent({
 }: {
   providerToken: string;
   eventId: string;
-}) {
-  const url = `${calendarEventsUrl}/${eventId}`;
-  const response = await fetch(url, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${providerToken}` },
-  });
+}): Promise<CalendarDeleteResult> {
+  try {
+    const url = `${calendarEventsUrl}/${encodeURIComponent(eventId)}`;
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${providerToken}` },
+    });
 
-  return response.ok || response.status === 410;
+    if (response.ok || response.status === 404 || response.status === 410) return { ok: true };
+    return calendarFailure(response.status, await readGoogleError(response));
+  } catch {
+    return {
+      ok: false,
+      code: "network_error",
+      message: "Falha de rede ao sincronizar com o Google Calendar.",
+    };
+  }
 }

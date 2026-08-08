@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Stethoscope } from "lucide-react";
+import { BrandName } from "@/components/brand-name";
 import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
@@ -42,17 +43,15 @@ export default function LoginPage() {
   if (loading) return null;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md rounded-xl border border-gray-100 bg-white p-8 text-center shadow-lg">
-        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-          <Stethoscope size={32} />
-        </div>
-        <h1 className="mb-2 text-2xl font-bold text-gray-900">MetaMed Revisão</h1>
-        <p className="mb-8 text-gray-500">Revisão espaçada de blocos de questões</p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center shadow-lg">
+        <Image src="/metamed-logo.svg" alt="" width={62} height={56} className="mx-auto mb-5 h-14 w-16 object-contain" priority />
+        <h1 className="mb-2 text-2xl font-semibold text-gray-950"><BrandName /> Revisão</h1>
+        <p className="mb-8 text-gray-500">Quais temas você precisa revisar nesta semana?</p>
 
         <button
           onClick={handleGoogleLogin}
-          className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:ring-4 focus:ring-gray-100"
+          className="flex w-full items-center justify-center gap-3 rounded-md border border-gray-300 bg-white px-4 py-3 font-medium text-gray-700 transition-colors hover:border-blue-500 hover:bg-blue-50 focus:ring-4 focus:ring-blue-100"
         >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M22.56 12.25C22.56 11.47 22.49 10.72 22.36 10H12V14.26H17.92C17.66 15.63 16.88 16.78 15.72 17.56V20.32H19.28C21.36 18.41 22.56 15.6 22.56 12.25Z" fill="#4285F4" />

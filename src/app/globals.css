@@ -3,21 +3,63 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f9fb;
+  --foreground: #000000;
+  --brand-blue: #3476ce;
+  --brand-sky: #338cd8;
+  --brand-cyan: #34a8d2;
+  --brand-teal: #36b0be;
+  --brand-mint: #36e7a0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+  letter-spacing: 0 !important;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
+  min-width: 320px;
+  margin: 0;
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Nunito", Arial, Helvetica, sans-serif;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+}
+
+body .font-medium,
+body .font-semibold,
+body .font-bold {
+  font-weight: 400;
+}
+
+body h1,
+body h2,
+body h3,
+body h4,
+body h5,
+body h6,
+body .font-display,
+body .tabular-nums {
+  font-family: "Poppins", Arial, Helvetica, sans-serif;
+  font-weight: 700 !important;
+}
+
+body .brand-word {
+  font-family: "Cal Sans", "Poppins", Arial, Helvetica, sans-serif;
+  font-weight: 400 !important;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 input,
@@ -30,4 +72,74 @@ textarea {
 input::placeholder,
 textarea::placeholder {
   color: #9ca3af;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .page-shell {
+    @apply mx-auto w-full max-w-7xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8 md:pb-10 lg:px-8;
+  }
+
+  .page-header {
+    @apply mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  .page-eyebrow {
+    @apply text-xs text-blue-700;
+  }
+
+  .page-title {
+    @apply mt-1 text-2xl font-semibold text-gray-950 sm:text-3xl;
+  }
+
+  .page-subtitle {
+    @apply mt-2 max-w-2xl text-sm leading-6 text-gray-600;
+  }
+
+  .field-control {
+    @apply h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 shadow-sm transition-colors placeholder:text-gray-400 hover:border-gray-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100;
+  }
+
+  .button-primary {
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-secondary {
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .icon-button {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .status-badge {
+    @apply inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[10px] font-semibold;
+  }
+
+  .dashboard-modal-overlay {
+    @apply fixed inset-y-0 left-0 right-0 z-50 flex items-center justify-center bg-gray-950/55 p-4 md:left-60;
+  }
+
+  .empty-state {
+    @apply flex min-h-48 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-gray-300 bg-white px-6 py-10 text-center text-sm text-gray-500;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
