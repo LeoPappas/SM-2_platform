@@ -1,16 +1,19 @@
-import { format, getISODay } from "date-fns";
 import type { DifficultyRating, QuestionBlock } from "./database.types";
-import { updateQuestionBlockAndSync } from "./calendar-sync";
+import { persistAutomaticReviewSchedule, syncQuestionBlockCalendar, updateQuestionBlockAndSync } from "./calendar-sync";
 import {
   ENGINE_VERSION,
+  buildAutomaticRebalanceUpdates,
   calculateNextInterval,
   calculatePriority,
   calculateUrgency,
   classifyPerformance,
   findNearestStudySlot,
+  normalizeStudyAvailability,
   toLegacyGrade,
 } from "./revision-engine";
 import { supabase } from "./supabase";
+import { planningToday } from "./planning-date";
+import { resolvePlanningWeek } from "./study-availability";
 
 export type CompleteReviewInput = {
   block: QuestionBlock;
@@ -21,6 +24,7 @@ export type CompleteReviewInput = {
   perceivedDifficulty: DifficultyRating;
   timeSpentMinutes?: number | null;
   examDate?: string | null;
+  operationId: string;
 };
 
 export async function completeBlockReview({
@@ -32,7 +36,12 @@ export async function completeBlockReview({
   perceivedDifficulty,
   timeSpentMinutes = null,
   examDate,
+  operationId,
 }: CompleteReviewInput) {
+  if (!Number.isInteger(questionCount) || questionCount < 1
+    || !Number.isInteger(correctCount) || correctCount < 0 || correctCount > questionCount) {
+    throw new Error("Informe uma quantidade válida de questões e acertos.");
+  }
   const calculation = calculateNextInterval({
     questionCount,
     correctCount,
@@ -63,9 +72,8 @@ export async function completeBlockReview({
     importance: block.importance,
   });
 
-  const { error: reviewError } = await supabase.from("block_reviews").insert({
-    block_id: block.id,
-    user_id: userId,
+  const review = {
+    expected_repetitions: block.repetitions,
     review_date: reviewDate,
     question_count: questionCount,
     correct_count: correctCount,
@@ -75,7 +83,7 @@ export async function completeBlockReview({
     sm2_grade_calculated: toLegacyGrade(calculation.performanceBand),
     previous_next_review_date: block.next_review_date,
     new_next_review_date: nextReviewDate,
-    contact_type: "review",
+    contact_type: "review" as const,
     engine_version: ENGINE_VERSION,
     calculation_mode: calculation.calculationMode,
     performance_band: calculation.performanceBand,
@@ -83,14 +91,8 @@ export async function completeBlockReview({
     previous_interval_days: block.interval_days,
     new_interval_days: calculation.intervalDays,
     priority_score: Number(priorityScore.toFixed(4)),
-  });
-
-  if (reviewError) throw new Error("Erro ao salvar a revisão.");
-
-  const { calendar } = await updateQuestionBlockAndSync({
-    blockId: block.id,
-    userId,
-    changes: {
+  };
+  const changes = {
       question_count: questionCount,
       correct_count: correctCount,
       accuracy_percentage: calculation.accuracy,
@@ -101,19 +103,40 @@ export async function completeBlockReview({
       next_review_date: nextReviewDate,
       last_review_date: reviewDate,
       planned_review_date: plannedReviewDate,
-      planning_source: "automatic",
+      planning_source: "automatic" as const,
       backlog_since: null,
       backlog_urgency: null,
       pre_exam_review_requested: false,
       performance_band: calculation.performanceBand,
       calculation_mode: calculation.calculationMode,
       engine_version: ENGINE_VERSION,
-      calendar_sync_status: block.calendar_sync_enabled ? "pending" : "disabled",
+      calendar_sync_status: block.calendar_sync_enabled ? "pending" as const : "disabled" as const,
       calendar_last_error: null,
-    },
+  };
+  const { data: saved, error: reviewError } = await supabase.rpc("complete_block_review", {
+    p_block_id: block.id,
+    p_operation_id: operationId,
+    p_review: review,
+    p_changes: changes,
   });
+  if (reviewError || !saved) {
+    if (reviewError?.message.includes("changed") || reviewError?.message.includes("alterad")) {
+      throw new Error("Este tema foi atualizado em outra sessão. Atualize a página antes de registrar outra revisão.");
+    }
+    throw new Error("Não foi possível confirmar o salvamento da revisão. Tente novamente para concluir a mesma operação.");
+  }
+  const calendar = await syncQuestionBlockCalendar({ blockId: block.id, userId });
 
-  return { calculation, calendarError: calendar.ok ? null : calendar.message };
+  // A replay returns the originally committed result, even after an uncertain response.
+  const savedCalculation = { ...calculation,
+    accuracy: saved.review.accuracy_percentage,
+    intervalDays: saved.review.new_interval_days ?? calculation.intervalDays,
+    nextReviewDate: saved.review.new_next_review_date,
+    performanceBand: saved.review.performance_band ?? calculation.performanceBand,
+    calculationMode: saved.review.calculation_mode ?? calculation.calculationMode,
+    fallsAfterExam: Boolean(examDate && saved.review.new_next_review_date > examDate),
+  };
+  return { calculation: savedCalculation, calendarError: calendar.ok ? null : calendar.message };
 }
 
 export async function scheduleBlockReview({
@@ -128,6 +151,7 @@ export async function scheduleBlockReview({
   const result = await updateQuestionBlockAndSync({
     blockId: block.id,
     userId,
+    expectedRepetitions: block.repetitions,
     changes: {
       planned_review_date: date,
       planning_source: "manual",
@@ -152,6 +176,7 @@ export async function unscheduleBlockReview({
   const result = await updateQuestionBlockAndSync({
     blockId: block.id,
     userId,
+    expectedRepetitions: block.repetitions,
     changes: {
       planned_review_date: automaticDate,
       planning_source: "automatic",
@@ -174,7 +199,7 @@ export async function findAutomaticReviewDate({
   const [{ data: profile, error: profileError }, { data: blocks, error: blocksError }] = await Promise.all([
     supabase
       .from("student_profiles")
-      .select("study_days,daily_theme_capacity")
+      .select("*")
       .eq("user_id", userId)
       .single(),
     supabase
@@ -185,6 +210,18 @@ export async function findAutomaticReviewDate({
   if (profileError || blocksError || !profile) {
     throw new Error("Não foi possível localizar seus slots de estudo.");
   }
+  const { data: overrides, error: overrideError } = await supabase
+    .from("weekly_plans").select("*").eq("user_id", userId);
+  if (overrideError) throw new Error("Não foi possível consultar sua disponibilidade semanal.");
+  const availabilityForDate = (date: string) => {
+    const week = resolvePlanningWeek(date, profile.week_starts_on ?? 1, overrides ?? []);
+    const override = overrides?.find(item => item.week_start === week.weekStart);
+    return normalizeStudyAvailability({
+      studyDays: override?.study_days ?? profile.study_days,
+      dailyCapacity: profile.daily_theme_capacity,
+      dailyCapacities: override?.daily_capacities ?? profile.daily_capacities ?? undefined,
+    });
+  };
 
   const occupiedDates = (blocks ?? [])
     .filter(item => item.id !== excludeBlockId && item.planned_review_date)
@@ -193,12 +230,11 @@ export async function findAutomaticReviewDate({
     targetDate,
     studyDays: profile.study_days,
     dailyCapacity: profile.daily_theme_capacity,
+    dailyCapacities: profile.daily_capacities ?? undefined,
+    availabilityForDate,
     occupiedDates,
-    notBeforeDate: targetDate < format(new Date(), "yyyy-MM-dd")
-      ? format(new Date(), "yyyy-MM-dd")
-      : undefined,
+    notBeforeDate: planningToday(profile.timezone),
   });
-  if (!date) throw new Error("Não foi encontrado um slot de estudo disponível.");
   return date;
 }
 
@@ -206,66 +242,52 @@ export async function rebalanceAutomaticReviewSlots({
   userId,
   studyDays,
   dailyCapacity,
+  dailyCapacities,
+  weekStartsOn = 1,
+  timezone = "America/Sao_Paulo",
 }: {
   userId: string;
   studyDays: number[];
   dailyCapacity: number;
+  dailyCapacities?: Record<string, number> | null;
+  weekStartsOn?: number;
+  timezone?: string;
 }) {
   const { data: blocks, error } = await supabase
     .from("question_blocks")
-    .select("id,next_review_date,planned_review_date,planning_source,backlog_since,created_at")
+    .select("*")
     .eq("user_id", userId);
   if (error) throw new Error("As configurações foram salvas, mas não foi possível reorganizar os estudos.");
-
-  const occupiedDates: string[] = [];
-  const manualIds = new Set<string>();
-  const manualCounts = new Map<string, number>();
-  for (const block of (blocks ?? []).filter(item => item.planning_source === "manual" && item.planned_review_date)) {
-    const date = block.planned_review_date as string;
-    manualIds.add(block.id);
-    const isStudyDay = studyDays.includes(getISODay(new Date(`${date}T12:00:00`)));
-    const count = manualCounts.get(date) ?? 0;
-    if (!isStudyDay || count >= dailyCapacity) continue;
-    manualCounts.set(date, count + 1);
-    occupiedDates.push(date);
-  }
-  const today = format(new Date(), "yyyy-MM-dd");
-  const automaticBlocks = (blocks ?? [])
-    .filter(block => !manualIds.has(block.id))
-    .sort((a, b) => (a.backlog_since ?? "9999-12-31").localeCompare(b.backlog_since ?? "9999-12-31")
-      || a.next_review_date.localeCompare(b.next_review_date)
-      || a.created_at.localeCompare(b.created_at));
-
-  const updates = [];
-  for (const block of automaticBlocks) {
-    const needsCurrentSlot = Boolean(block.backlog_since) || block.next_review_date < today;
-    const targetDate = needsCurrentSlot ? today : block.next_review_date;
-    const plannedReviewDate = findNearestStudySlot({
-      targetDate,
-      studyDays,
+  const { data: overrides, error: overrideError } = await supabase
+    .from("weekly_plans").select("*").eq("user_id", userId);
+  if (overrideError) throw new Error("Não foi possível consultar a disponibilidade das semanas.");
+  const availabilityForDate = (date: string) => {
+    const week = resolvePlanningWeek(date, weekStartsOn, overrides ?? []);
+    const override = overrides?.find(item => item.week_start === week.weekStart);
+    return normalizeStudyAvailability({
+      studyDays: override?.study_days ?? studyDays,
       dailyCapacity,
-      occupiedDates,
-      notBeforeDate: needsCurrentSlot ? today : undefined,
+      dailyCapacities: override?.daily_capacities ?? dailyCapacities ?? undefined,
     });
-    if (!plannedReviewDate) throw new Error("Não foi possível distribuir todos os temas nos novos slots.");
-    occupiedDates.push(plannedReviewDate);
-    if (block.planned_review_date !== plannedReviewDate || block.planning_source !== "automatic") {
-      updates.push(updateQuestionBlockAndSync({
-        blockId: block.id,
-        userId,
-        changes: {
-          planned_review_date: plannedReviewDate,
-          planning_source: "automatic",
-          calendar_sync_status: "pending",
-        },
-      }));
-    }
-  }
+  };
 
-  const results = await Promise.all(updates);
-  if (results.some(result => !result.calendar.ok)) {
-    throw new Error("As configurações foram salvas, mas alguns estudos não foram reorganizados.");
-  }
+  const today = planningToday(timezone);
+  const week = resolvePlanningWeek(today, weekStartsOn, overrides ?? []);
+  const { data: reviews, error: reviewsError } = await supabase.from("block_reviews")
+    .select("block_id,review_date").eq("user_id", userId).eq("contact_type", "review")
+    .gte("review_date", week.weekStart).lte("review_date", today);
+  if (reviewsError) throw new Error("As configurações foram salvas, mas não foi possível conferir as revisões concluídas.");
+  const { updates } = buildAutomaticRebalanceUpdates({
+    blocks: blocks ?? [], studyDays, dailyCapacity, dailyCapacities,
+    referenceDate: today, weekStartsOn, availabilityForDate,
+    weekForDate: date => resolvePlanningWeek(date, weekStartsOn, overrides ?? []),
+    completedWork: (reviews ?? []).map(review => ({ blockId: review.block_id, date: review.review_date })),
+  });
+  const results = await Promise.all(updates.map(update => persistAutomaticReviewSchedule({
+    block: blocks!.find(block => block.id === update.id)!, userId,
+    date: update.planned_review_date, source: update.planning_source,
+  })));
+  return { updated: results.length, calendarPending: results.filter(result => !result.calendar.ok).length };
 }
 
 export async function setPreExamReviewRequest({

@@ -91,12 +91,17 @@ async function performBlockSync({ blockId, userId }: { blockId: string; userId: 
     if (!result.ok) outcome = { ok: false, message: result.message };
   }
 
-  const { error: patchError } = await supabase
+  // Synchronization records outcomes; a stale result cannot change a newer preference or schedule.
+  delete patch.calendar_sync_enabled;
+  const { data: synced, error: patchError } = await supabase
     .from("question_blocks")
     .update(patch)
     .eq("id", blockId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .eq("updated_at", block.updated_at)
+    .select("id").maybeSingle();
   if (patchError) return { ok: false, message: "O Google Calendar foi atualizado, mas o estado de sincronização não foi salvo." };
+  if (!synced) return { ok: false, message: "O agendamento mudou durante a sincronização. A nova data será sincronizada na próxima tentativa." };
   return outcome;
 }
 
@@ -104,22 +109,49 @@ export async function updateQuestionBlockAndSync({
   blockId,
   userId,
   changes,
+  expectedRepetitions,
 }: {
   blockId: string;
   userId: string;
   changes: Partial<QuestionBlock>;
+  expectedRepetitions?: number;
 }) {
-  const { data, error } = await supabase
+  let query = supabase
     .from("question_blocks")
     .update(changes)
     .eq("id", blockId)
-    .eq("user_id", userId)
+    .eq("user_id", userId);
+  if (expectedRepetitions !== undefined) query = query.eq("repetitions", expectedRepetitions);
+  const { data, error } = await query
     .select("*")
-    .single();
-  if (error || !data) throw new Error("Não foi possível atualizar o bloco de estudo.");
+    .maybeSingle();
+  if (error) throw new Error("Não foi possível atualizar o tema.");
+  if (!data) throw new Error("Este tema foi atualizado em outra sessão. Atualize a página antes de remarcar.");
 
   const outcome = await syncQuestionBlockCalendar({ blockId, userId });
   return { block: data, calendar: outcome };
+}
+
+/** A stale automatic plan must never replace a manual move or a newer review. */
+export async function persistAutomaticReviewSchedule({ block, userId, date, source }: {
+  block: QuestionBlock;
+  userId: string;
+  date: string | null;
+  source: "automatic" | null;
+}) {
+  const { data, error } = await supabase.from("question_blocks")
+    .update({ planned_review_date: date, planning_source: source,
+      calendar_sync_status: block.calendar_sync_enabled ? "pending" : "disabled" })
+    .eq("id", block.id).eq("user_id", userId).eq("repetitions", block.repetitions)
+    .or("planning_source.is.null,planning_source.eq.automatic")
+    .select("*").maybeSingle();
+  if (error) throw new Error("Não foi possível confirmar todas as datas da semana.");
+  if (!data) return { block: null, calendar: { ok: true } as SyncOutcome };
+  const calendar = await syncQuestionBlockCalendar({ blockId: block.id, userId });
+  // Return the committed sync state, so a successful sync is not shown as pending.
+  const { data: latest } = await supabase.from("question_blocks").select("*")
+    .eq("id", block.id).eq("user_id", userId).maybeSingle();
+  return { block: latest ?? data, calendar };
 }
 
 export async function reconcileQuestionBlocksCalendar(userId: string) {
@@ -127,7 +159,7 @@ export async function reconcileQuestionBlocksCalendar(userId: string) {
     .from("question_blocks")
     .select("*")
     .eq("user_id", userId);
-  if (error) return { synced: 0, failed: 0 };
+  if (error) throw new Error("Não foi possível consultar os agendamentos pendentes do Google Calendar.");
 
   const pending = (blocks ?? []).filter(needsCalendarReconciliation);
   const results = await Promise.all(pending.map(block => syncQuestionBlockCalendar({ blockId: block.id, userId })));

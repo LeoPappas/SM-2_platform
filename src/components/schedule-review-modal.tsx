@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { eachDayOfInterval, format, getISODay } from "date-fns";
 import { CalendarPlus, CalendarX, X } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
 import type { QuestionBlock } from "@/lib/database.types";
 import { scheduleBlockReview, unscheduleBlockReview } from "@/lib/revision-actions";
+import { useModalAccessibility } from "@/lib/use-modal-accessibility";
 
 export function ScheduleReviewModal({
   block,
@@ -24,27 +25,35 @@ export function ScheduleReviewModal({
   onClose: () => void;
   onChanged: () => void | Promise<void>;
 }) {
-  const [date, setDate] = useState(block.planned_review_date ?? minDate ?? block.next_review_date);
+  const [date, setDate] = useState(() => {
+    const proposed = block.planned_review_date ?? minDate ?? block.next_review_date;
+    return minDate && proposed < minDate ? minDate : proposed;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const titleId = useId();
+  const panelRef = useModalAccessibility(onClose, submitting);
   const availableDates = useMemo(() => {
-    if (!minDate || !maxDate || !studyDays?.length) return [];
+    if (!minDate || !maxDate || minDate > maxDate || !studyDays?.length) return [];
     return eachDayOfInterval({ start: new Date(`${minDate}T12:00:00`), end: new Date(`${maxDate}T12:00:00`) })
       .filter(day => studyDays.includes(getISODay(day)))
-      .map(day => format(day, "yyyy-MM-dd"));
+      .map(day => format(day, "yyyy-MM-dd")).slice(0, 7);
   }, [maxDate, minDate, studyDays]);
-  const unavailableDay = Boolean(date && studyDays?.length && !studyDays.includes(getISODay(new Date(`${date}T12:00:00`))));
+  const unavailableDay = Boolean(date && studyDays && !studyDays.includes(getISODay(new Date(`${date}T12:00:00`))));
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      await scheduleBlockReview({ block, userId, date });
+      const calendar = await scheduleBlockReview({ block, userId, date });
+      setSaved(true);
       await onChanged();
-      onClose();
+      if (calendar.ok) onClose();
+      else setError("A data foi salva na MetaMed. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível agendar a revisão.");
+      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o planejamento. Atualize a página para conferir a data salva.");
     } finally {
       setSubmitting(false);
     }
@@ -54,9 +63,11 @@ export function ScheduleReviewModal({
     setSubmitting(true);
     setError(null);
     try {
-      await unscheduleBlockReview({ block, userId });
+      const calendar = await unscheduleBlockReview({ block, userId });
+      setSaved(true);
       await onChanged();
-      onClose();
+      if (calendar.ok) onClose();
+      else setError("A sugestão automática foi salva. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível remover o agendamento.");
     } finally {
@@ -69,18 +80,20 @@ export function ScheduleReviewModal({
       className="dashboard-modal-overlay"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-busy={submitting}
       onMouseDown={event => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && !submitting) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+      <div ref={panelRef} tabIndex={-1} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold text-emerald-700">{block.major_area} · {block.specialty}</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-950">Escolher um dia</h2>
+            <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-950">Escolher um dia</h2>
             <p className="mt-1 text-sm text-gray-500">{block.title}</p>
           </div>
-          <button type="button" onClick={onClose} className="icon-button" aria-label="Fechar">
+          <button type="button" onClick={onClose} disabled={submitting} className="icon-button" aria-label="Fechar">
             <X size={18} />
           </button>
         </div>
@@ -90,6 +103,7 @@ export function ScheduleReviewModal({
             <span className="mb-1.5 block text-sm font-medium text-gray-700">Dia da revisão</span>
             <input
               type="date"
+              data-modal-initial-focus
               required
               value={date}
               min={minDate}
@@ -129,15 +143,15 @@ export function ScheduleReviewModal({
               <button
                 type="button"
                 onClick={unschedule}
-                disabled={submitting}
+                disabled={submitting || saved}
                 className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
                 <CalendarX size={16} /> Usar sugestão automática
               </button>
             ) : <span />}
             <div className="ml-auto flex gap-2">
-              <button type="button" onClick={onClose} className="button-secondary">Cancelar</button>
-              <button type="submit" disabled={submitting || !date} className="button-primary">
+              <button type="button" onClick={onClose} disabled={submitting} className="button-secondary">{saved ? "Fechar" : "Cancelar"}</button>
+              <button type="submit" disabled={submitting || saved || !date} className="button-primary">
                 <CalendarPlus size={16} /> {submitting ? "Salvando..." : "Agendar"}
               </button>
             </div>

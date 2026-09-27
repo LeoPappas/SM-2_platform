@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { format } from "date-fns";
+import { useId, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CalendarClock, Check, Play, X } from "lucide-react";
 import type { DifficultyRating, QuestionBlock } from "@/lib/database.types";
-import { completeBlockReview, setPreExamReviewRequest } from "@/lib/revision-actions";
+import { completeBlockReview, setPreExamReviewRequest, type CompleteReviewInput } from "@/lib/revision-actions";
+import { planningToday } from "@/lib/planning-date";
 import { calculateAccuracy, getCalculationMode } from "@/lib/revision-engine";
+import { useModalAccessibility } from "@/lib/use-modal-accessibility";
 
 const difficultyOptions: DifficultyRating[] = [
   "Muito fácil",
@@ -22,6 +23,7 @@ export function ReviewModal({
   userId,
   examDate,
   initialDate,
+  timezone,
   onClose,
   onCompleted,
 }: {
@@ -29,10 +31,11 @@ export function ReviewModal({
   userId: string;
   examDate?: string | null;
   initialDate?: string;
+  timezone?: string;
   onClose: () => void;
   onCompleted: () => void | Promise<void>;
 }) {
-  const [reviewDate, setReviewDate] = useState(initialDate ?? format(new Date(), "yyyy-MM-dd"));
+  const [reviewDate, setReviewDate] = useState(initialDate ?? planningToday(timezone));
   const [questionCount, setQuestionCount] = useState(block.question_count || 20);
   const [correctCount, setCorrectCount] = useState(block.correct_count);
   const [difficulty, setDifficulty] = useState<DifficultyRating>(block.perceived_difficulty);
@@ -40,6 +43,10 @@ export function ReviewModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReviewResult | null>(null);
+  const [operationId] = useState(() => crypto.randomUUID());
+  const originalSubmission = useRef<CompleteReviewInput | null>(null);
+  const [locked, setLocked] = useState(false);
+  const titleId = useId();
 
   const accuracy = useMemo(
     () => calculateAccuracy(correctCount, questionCount),
@@ -56,7 +63,7 @@ export function ReviewModal({
     setError(null);
 
     try {
-      const completed = await completeBlockReview({
+      originalSubmission.current ??= {
         block,
         userId,
         reviewDate,
@@ -65,10 +72,18 @@ export function ReviewModal({
         perceivedDifficulty: difficulty,
         timeSpentMinutes: timeSpent ? Number(timeSpent) : null,
         examDate,
-      });
+        operationId,
+      };
+      setLocked(true);
+      const completed = await completeBlockReview(originalSubmission.current);
       setResult(completed);
-      await onCompleted();
-      if (!completed.calculation.fallsAfterExam) onClose();
+      try {
+        await onCompleted();
+      } catch {
+        setError("A revisão foi salva. Atualize a página para ver o planejamento atualizado.");
+        return;
+      }
+      if (!completed.calculation.fallsAfterExam && !completed.calendarError) onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível registrar a revisão.");
     } finally {
@@ -92,15 +107,16 @@ export function ReviewModal({
 
   if (result?.calculation.fallsAfterExam) {
     return (
-      <DialogShell onClose={onClose}>
+      <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
         <div className="flex h-11 w-11 items-center justify-center rounded-md bg-amber-100 text-amber-700">
           <CalendarClock size={22} />
         </div>
-        <h2 className="mt-5 text-lg font-semibold text-gray-950">A próxima janela cai depois da prova</h2>
+        <h2 id={titleId} className="mt-5 text-lg font-semibold text-gray-950">A próxima janela cai depois da prova</h2>
         <p className="mt-2 text-sm leading-6 text-gray-600">
           O intervalo calculado foi mantido em {result.calculation.intervalDays} dias. Você quer separar este tema para uma última revisão antes de {formatDate(examDate)}?
         </p>
         {error && <ErrorMessage>{error}</ErrorMessage>}
+        {result?.calendarError && <p role="status" className="text-sm leading-5 text-amber-700">A revisão foi salva. O Google Calendar ficou pendente: {result.calendarError}</p>}
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
           <button
             type="button"
@@ -123,27 +139,42 @@ export function ReviewModal({
     );
   }
 
+  if (result) {
+    return (
+      <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
+        <Check size={24} className="text-emerald-700" />
+        <h2 id={titleId} className="mt-4 text-lg font-semibold text-gray-950">Revisão salva</h2>
+        <p className="mt-2 text-sm leading-6 text-gray-600">Próxima sugestão: {formatDate(result.calculation.nextReviewDate)}.</p>
+        {result.calendarError && <p role="status" className="mt-3 text-sm leading-6 text-amber-800">Seu estudo foi registrado. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.</p>}
+        {error && <ErrorMessage>{error}</ErrorMessage>}
+        <div className="mt-6 flex justify-end"><button type="button" className="button-primary" disabled={submitting} onClick={onClose}>Fechar</button></div>
+      </DialogShell>
+    );
+  }
+
   return (
-    <DialogShell onClose={onClose}>
+    <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold text-emerald-700">{block.major_area} · {block.specialty}</p>
-          <h2 className="mt-1 text-lg font-semibold text-gray-950">Registrar revisão</h2>
+          <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-950">Registrar revisão</h2>
           <p className="mt-1 text-sm text-gray-500">{block.title}</p>
         </div>
-        <button type="button" onClick={onClose} className="icon-button" aria-label="Fechar">
+        <button type="button" onClick={onClose} disabled={submitting} className="icon-button" aria-label="Fechar">
           <X size={18} />
         </button>
       </div>
 
       <form onSubmit={submit} className="mt-6 space-y-4">
+        <fieldset disabled={submitting || locked} className="space-y-4">
         <Field label="Data da revisão">
           <input
             type="date"
+            data-modal-initial-focus
             required
             value={reviewDate}
             min={block.last_review_date ?? block.study_date}
-            max={format(new Date(), "yyyy-MM-dd")}
+            max={planningToday(timezone)}
             onChange={event => setReviewDate(event.target.value)}
             className="field-control"
           />
@@ -216,13 +247,15 @@ export function ReviewModal({
           )}
         </div>
 
+        </fieldset>
         {error && <ErrorMessage>{error}</ErrorMessage>}
+        {locked && error && <p className="text-xs leading-5 text-gray-500">Ao tentar novamente, os mesmos dados serão enviados para confirmar esta revisão.</p>}
 
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="button-secondary">Cancelar</button>
+          <button type="button" onClick={onClose} disabled={submitting} className="button-secondary">Cancelar</button>
           <button
             type="submit"
-            disabled={submitting || correctCount > questionCount}
+            disabled={submitting || Boolean(result) || correctCount > questionCount}
             className="button-primary"
           >
             <Play size={15} /> {submitting ? "Salvando..." : "Salvar revisão"}
@@ -233,12 +266,13 @@ export function ReviewModal({
   );
 }
 
-function DialogShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+function DialogShell({ children, onClose, busy, titleId }: { children: React.ReactNode; onClose: () => void; busy: boolean; titleId: string }) {
+  const panelRef = useModalAccessibility(onClose, busy);
   return (
-    <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" onMouseDown={event => {
-      if (event.target === event.currentTarget) onClose();
+    <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} onMouseDown={event => {
+      if (event.target === event.currentTarget && !busy) onClose();
     }}>
-      <div className="max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div ref={panelRef} tabIndex={-1} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         {children}
       </div>
     </div>

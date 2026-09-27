@@ -18,6 +18,8 @@ export type PerformanceBand = "muito_bom" | "bom" | "ruim" | "muito_ruim";
 export type CalculationMode = "performance" | "small_sample";
 export type CourseCatalogSource = "metamed" | "upload";
 export type PlanningSource = "automatic" | "manual";
+/** ISO weekday keys (1..7); persisted values are validated by the database. */
+export type DailyCapacities = Record<string, number>;
 
 export type Database = {
   public: {
@@ -29,6 +31,9 @@ export type Database = {
           preferred_name: string | null;
           study_days: number[];
           daily_theme_capacity: number;
+          daily_capacities?: DailyCapacities | null;
+          week_starts_on?: number;
+          timezone?: string;
           preparation_start_date: string;
           preparation_horizon_months: number;
           weekly_review_capacity: number;
@@ -51,6 +56,9 @@ export type Database = {
           preferred_name?: string | null;
           study_days?: number[];
           daily_theme_capacity?: number;
+          daily_capacities?: DailyCapacities | null;
+          week_starts_on?: number;
+          timezone?: string;
           preparation_start_date?: string;
           preparation_horizon_months?: number;
           weekly_review_capacity?: number;
@@ -129,6 +137,10 @@ export type Database = {
           user_id: string;
           week_start: string;
           capacity: number;
+          study_days?: number[] | null;
+          daily_capacities?: DailyCapacities | null;
+          week_starts_on?: number;
+          closed_at?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -136,10 +148,54 @@ export type Database = {
           user_id: string;
           week_start: string;
           capacity: number;
+          study_days?: number[] | null;
+          daily_capacities?: DailyCapacities | null;
+          week_starts_on?: number;
+          closed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["weekly_plans"]["Row"]>;
+        Relationships: [];
+      };
+      weekly_plan_items: {
+        Row: {
+          id: string;
+          user_id: string;
+          block_id: string;
+          revision_number: number;
+          due_week_start: string;
+          original_due_week_start: string;
+          week_starts_on: number;
+          planned_review_date: string | null;
+          planning_source: PlanningSource | null;
+          status: "open" | "completed";
+          backlog_since: string | null;
+          completed_at: string | null;
+          completed_review_id: string | null;
+          reschedule_history: Array<{ at: string; from: string | null; to: string | null; source: PlanningSource | null }>;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          block_id: string;
+          revision_number: number;
+          due_week_start: string;
+          original_due_week_start: string;
+          week_starts_on: number;
+          planned_review_date?: string | null;
+          planning_source?: PlanningSource | null;
+          status?: "open" | "completed";
+          backlog_since?: string | null;
+          completed_at?: string | null;
+          completed_review_id?: string | null;
+          reschedule_history?: Array<{ at: string; from: string | null; to: string | null; source: PlanningSource | null }>;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["weekly_plan_items"]["Row"]>;
         Relationships: [];
       };
       exam_targets: {
@@ -281,6 +337,7 @@ export type Database = {
           previous_next_review_date: string | null;
           new_next_review_date: string;
           contact_type: "first_contact" | "review";
+          operation_id?: string | null;
           engine_version: string;
           calculation_mode: CalculationMode | null;
           performance_band: PerformanceBand | null;
@@ -304,6 +361,7 @@ export type Database = {
           previous_next_review_date?: string | null;
           new_next_review_date: string;
           contact_type?: "first_contact" | "review";
+          operation_id?: string | null;
           engine_version?: string;
           calculation_mode?: CalculationMode | null;
           performance_band?: PerformanceBand | null;
@@ -319,6 +377,27 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      prepare_weekly_plan: {
+        Args: { p_reference_date: string };
+        Returns: { week_start: string; week_starts_on: number; closed_weeks: number; items: WeeklyPlanItem[] };
+      };
+      save_weekly_availability: {
+        Args: { p_week_start: string; p_study_days: number[]; p_daily_capacities: DailyCapacities | null };
+        Returns: WeeklyPlan;
+      };
+      reset_weekly_availability: {
+        Args: { p_week_start: string };
+        Returns: WeeklyPlan;
+      };
+      complete_block_review: {
+        Args: {
+          p_block_id: string;
+          p_operation_id: string;
+          p_review: Omit<BlockReviewInsert, "block_id" | "user_id"> & { expected_repetitions: number };
+          p_changes: Database["public"]["Tables"]["question_blocks"]["Update"];
+        };
+        Returns: { block: QuestionBlock; review: BlockReview; replayed: boolean };
+      };
       replace_course_topics: {
         Args: {
           p_filename: string;
@@ -347,3 +426,5 @@ export type QuestionBlock = Database["public"]["Tables"]["question_blocks"]["Row
 export type QuestionBlockInsert = Database["public"]["Tables"]["question_blocks"]["Insert"];
 export type BlockReview = Database["public"]["Tables"]["block_reviews"]["Row"];
 export type BlockReviewInsert = Database["public"]["Tables"]["block_reviews"]["Insert"];
+export type WeeklyPlan = Database["public"]["Tables"]["weekly_plans"]["Row"];
+export type WeeklyPlanItem = Database["public"]["Tables"]["weekly_plan_items"]["Row"];

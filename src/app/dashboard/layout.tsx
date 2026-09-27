@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
-import { reconcileQuestionBlocksCalendar } from "@/lib/calendar-sync";
+import { reconcileCalendar } from "@/lib/calendar-reconciliation";
 import { clearGoogleProviderToken, persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
@@ -32,14 +32,65 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    let disposed = false;
+    let activeUserId: string | null = null;
+    let lastRecoveryAt = 0;
+    let latestProviderToken: string | null = null;
+    const deferredRuns = new Set<ReturnType<typeof setTimeout>>();
+    const recoverCalendar = (force = false) => {
+      if (disposed || !activeUserId || !navigator.onLine) return;
+      if (!force && Date.now() - lastRecoveryAt < 30_000) return;
+      lastRecoveryAt = Date.now();
+      void reconcileCalendar(activeUserId).catch(() => {
+        // Persisted pending/failed states remain available for the next recovery.
+      });
+    };
+    const onRecoveryEvent = () => recoverCalendar();
+    window.addEventListener("focus", onRecoveryEvent);
+    window.addEventListener("online", onRecoveryEvent);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (disposed) return;
+      if (!session) {
+        activeUserId = null;
+        if (event === "SIGNED_OUT") {
+          clearGoogleProviderToken();
+          router.replace("/");
+        }
+        return;
+      }
+      persistGoogleProviderToken(session);
+      const userChanged = activeUserId !== session.user.id;
+      const tokenChanged = Boolean(session.provider_token && latestProviderToken !== session.provider_token);
+      activeUserId = session.user.id;
+      if (session.provider_token) latestProviderToken = session.provider_token;
+      setChecking(false);
+      if (userChanged || tokenChanged) {
+        // Supabase callbacks are synchronous; query after its auth lock is released.
+        const deferred = setTimeout(() => {
+          deferredRuns.delete(deferred);
+          recoverCalendar(true);
+        }, 0);
+        deferredRuns.add(deferred);
+      }
+    });
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (disposed) return;
       persistGoogleProviderToken(session);
       if (!session) router.replace("/");
       else {
+        activeUserId = session.user.id;
+        latestProviderToken = session.provider_token ?? null;
         setChecking(false);
-        void reconcileQuestionBlocksCalendar(session.user.id);
+        recoverCalendar();
       }
     });
+    return () => {
+      disposed = true;
+      subscription.unsubscribe();
+      window.removeEventListener("focus", onRecoveryEvent);
+      window.removeEventListener("online", onRecoveryEvent);
+      for (const deferred of deferredRuns) clearTimeout(deferred);
+    };
   }, [router]);
 
   const logout = async () => {
