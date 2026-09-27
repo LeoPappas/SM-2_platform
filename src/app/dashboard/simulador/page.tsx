@@ -10,8 +10,13 @@ import {
   calculatePriority,
   type EngineConfig,
 } from "@/lib/revision-engine";
+import {
+  DEFAULT_RELEVANCE_EXPERIMENT,
+  calculateRelevanceShadowInterval,
+  type RelevanceExperimentConfig,
+} from "@/lib/relevance-engine";
 
-type ControlTab = "desempenho" | "amostra" | "prioridade";
+type ControlTab = "desempenho" | "amostra" | "prioridade" | "relevancia";
 
 const performanceBands: PerformanceBand[] = ["muito_ruim", "ruim", "bom", "muito_bom"];
 const difficulties: DifficultyRating[] = ["Muito difícil", "Difícil", "Médio", "Fácil", "Muito fácil"];
@@ -19,8 +24,9 @@ const importances: Importance[] = ["alta", "media", "baixa"];
 
 export default function SimulatorPage() {
   const [config, setConfig] = useState<EngineConfig>(() => cloneConfig(DEFAULT_ENGINE_CONFIG));
+  const [relevanceConfig, setRelevanceConfig] = useState<RelevanceExperimentConfig>(() => ({ ...DEFAULT_RELEVANCE_EXPERIMENT }));
   const [tab, setTab] = useState<ControlTab>("desempenho");
-  const scenarios = useMemo(() => runScenarios(config), [config]);
+  const scenarios = useMemo(() => runScenarios(config, relevanceConfig), [config, relevanceConfig]);
 
   const updateRecord = <K extends keyof EngineConfig>(
     section: K,
@@ -44,7 +50,10 @@ export default function SimulatorPage() {
           <h1 className="page-title">Simulador <BrandName /></h1>
           <p className="page-subtitle">Parâmetros experimentais aplicados aos cenários de validação. O motor ativo não é alterado nesta tela.</p>
         </div>
-        <button type="button" onClick={() => setConfig(cloneConfig(DEFAULT_ENGINE_CONFIG))} className="button-secondary"><RotateCcw size={16} /> Restaurar valores</button>
+        <button type="button" onClick={() => {
+          setConfig(cloneConfig(DEFAULT_ENGINE_CONFIG));
+          setRelevanceConfig({ ...DEFAULT_RELEVANCE_EXPERIMENT });
+        }} className="button-secondary"><RotateCcw size={16} /> Restaurar valores</button>
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
@@ -57,10 +66,11 @@ export default function SimulatorPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 border-b border-gray-200 bg-gray-50 p-1">
+          <div className="grid grid-cols-2 border-b border-gray-200 bg-gray-50 p-1 sm:grid-cols-4 xl:grid-cols-2">
             <TabButton active={tab === "desempenho"} onClick={() => setTab("desempenho")}>Desempenho</TabButton>
             <TabButton active={tab === "amostra"} onClick={() => setTab("amostra")}>Amostra</TabButton>
             <TabButton active={tab === "prioridade"} onClick={() => setTab("prioridade")}>Prioridade</TabButton>
+            <TabButton active={tab === "relevancia"} onClick={() => setTab("relevancia")}>Relevância</TabButton>
           </div>
 
           <div className="max-h-[calc(100vh-12rem)] overflow-y-auto p-4">
@@ -109,6 +119,19 @@ export default function SimulatorPage() {
                 </ControlGroup>
               </div>
             )}
+
+            {tab === "relevancia" && (
+              <div className="space-y-5">
+                <div className="rounded-md border border-teal-200 bg-teal-50 px-3 py-3 text-xs leading-5 text-teal-900">
+                  Experimento em comparação: estes valores não alteram o motor ativo nem as datas salvas.
+                </div>
+                <ControlGroup title="Multiplicador do intervalo">
+                  <NumberControl label="Nota 10" value={relevanceConfig.minimumFactor} min={0.1} max={relevanceConfig.maximumFactor} step={0.05} onChange={value => setRelevanceConfig(current => ({ ...current, minimumFactor: value }))} />
+                  <NumberControl label="Nota 1" value={relevanceConfig.maximumFactor} min={relevanceConfig.minimumFactor} step={0.05} onChange={value => setRelevanceConfig(current => ({ ...current, maximumFactor: value }))} />
+                </ControlGroup>
+                <p className="text-xs leading-5 text-gray-500">A transformação é linear: nota maior reduz o intervalo. O primeiro contato permanece igual.</p>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -141,6 +164,31 @@ export default function SimulatorPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="overflow-hidden rounded-md border border-teal-200 bg-white">
+            <div className="border-b border-teal-100 bg-teal-50/60 px-4 py-4">
+              <h2 className="text-sm font-semibold text-gray-950">Relevância numérica · comparação em sombra</h2>
+              <p className="mt-1 text-xs leading-5 text-gray-600">Mesmo desempenho, dificuldade e intervalo anterior. O motor ativo usa importância média; a coluna candidata substitui esse fator somente na simulação.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+                <caption className="sr-only">Comparação entre os intervalos do motor ativo e do experimento de relevância numérica.</caption>
+                <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-500">
+                  <tr><th scope="col" className="px-4 py-2.5">Nota</th><th scope="col" className="px-4 py-2.5">Fator</th><th scope="col" className="px-4 py-2.5">Motor ativo · média</th><th scope="col" className="px-4 py-2.5">Candidato</th></tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {scenarios.relevance.map(item => (
+                    <tr key={item.score}>
+                      <th scope="row" className="px-4 py-3 font-semibold text-gray-950">{item.score.toLocaleString("pt-BR")}</th>
+                      <td className="px-4 py-3 tabular-nums text-gray-600">{item.factor.toFixed(3)}×</td>
+                      <td className="px-4 py-3 tabular-nums text-gray-600">{item.activeInterval} dias</td>
+                      <td className="px-4 py-3 font-semibold tabular-nums text-teal-800">{item.shadowInterval} dias</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -189,7 +237,7 @@ export default function SimulatorPage() {
   );
 }
 
-function runScenarios(config: EngineConfig) {
+function runScenarios(config: EngineConfig, relevanceConfig: RelevanceExperimentConfig) {
   const scenario1 = sequence(config, [
     { questions: 20, correct: 16, difficulty: "Médio" as DifficultyRating, importance: "alta" as Importance },
     { questions: 20, correct: 18, difficulty: "Médio" as DifficultyRating, importance: "alta" as Importance },
@@ -244,6 +292,34 @@ function runScenarios(config: EngineConfig) {
     examDate: "2026-11-30",
     config,
   });
+  const activeRelevanceBaseline = calculateNextInterval({
+    questionCount: 20,
+    correctCount: 16,
+    perceivedDifficulty: "Médio",
+    importance: "media",
+    previousIntervalDays: 30,
+    isFirstContact: false,
+    config,
+  });
+  const relevance = [1, 3, 5, 5.5, 7, 9, 10].map(score => {
+    const candidate = calculateRelevanceShadowInterval({
+      relevanceScore: score,
+      questionCount: 20,
+      correctCount: 16,
+      perceivedDifficulty: "Médio",
+      legacyImportance: "media",
+      previousIntervalDays: 30,
+      isFirstContact: false,
+      engineConfig: config,
+      relevanceConfig,
+    });
+    return {
+      score,
+      factor: candidate.relevanceFactor,
+      activeInterval: activeRelevanceBaseline.intervalDays,
+      shadowInterval: candidate.intervalDays,
+    };
+  });
 
   return {
     longitudinal: [
@@ -253,6 +329,7 @@ function runScenarios(config: EngineConfig) {
       { name: "Vasculite rara", description: "Fácil · baixa importância · amostra pequena", intervals: scenario4 },
     ],
     weekly,
+    relevance,
     floor,
     afterExam,
   };
@@ -286,7 +363,11 @@ function NumberControl({ label, value, min, max, step, onChange }: { label: stri
   return (
     <label className="flex items-center justify-between gap-3">
       <span className="text-xs text-gray-600">{label}</span>
-      <input type="number" value={value} min={min} max={max} step={step} onChange={event => onChange(Number(event.target.value))} className="h-9 w-20 rounded-md border border-gray-300 px-2 text-right text-xs font-semibold tabular-nums focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+      <input type="number" value={value} min={min} max={max} step={step} onChange={event => {
+        const next = event.currentTarget.valueAsNumber;
+        if (!Number.isFinite(next)) return;
+        onChange(Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min, next)));
+      }} className="h-9 w-20 rounded-md border border-gray-300 px-2 text-right text-xs font-semibold tabular-nums focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
     </label>
   );
 }

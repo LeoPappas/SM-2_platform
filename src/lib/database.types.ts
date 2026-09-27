@@ -18,6 +18,15 @@ export type PerformanceBand = "muito_bom" | "bom" | "ruim" | "muito_ruim";
 export type CalculationMode = "performance" | "small_sample";
 export type CourseCatalogSource = "metamed" | "upload";
 export type PlanningSource = "automatic" | "manual";
+export type CatalogReleaseStatus = "draft" | "validated" | "active" | "retired";
+export type RelevanceValidationState = "draft" | "validated" | "rejected";
+export type RelevanceEngineMode = "shadow";
+export type RelevanceFormulaConfig = {
+  minimumScore: number;
+  maximumScore: number;
+  minimumFactor: number;
+  maximumFactor: number;
+};
 /** ISO weekday keys (1..7); persisted values are validated by the database. */
 export type DailyCapacities = Record<string, number>;
 
@@ -130,6 +139,211 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["metamed_topics"]["Row"]>;
+        Relationships: [];
+      };
+      relevance_publications: {
+        Row: {
+          id: string;
+          version_key: string;
+          reference_year: number;
+          validation_state: RelevanceValidationState;
+          score_formula: string;
+          rounding_mode: "half_up_1_decimal";
+          source_filename: string;
+          source_sha256: string;
+          technical_document_filename: string;
+          technical_document_sha256: string;
+          importer_version: string;
+          validation_report: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          version_key: string;
+          reference_year: number;
+          validation_state: RelevanceValidationState;
+          score_formula: string;
+          rounding_mode: "half_up_1_decimal";
+          source_filename: string;
+          source_sha256: string;
+          technical_document_filename: string;
+          technical_document_sha256: string;
+          importer_version: string;
+          validation_report: Record<string, unknown>;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["relevance_publications"]["Row"]>;
+        Relationships: [];
+      };
+      relevance_engine_activations: {
+        Row: {
+          exam_code: string;
+          publication_id: string;
+          mode: RelevanceEngineMode;
+          formula_version: "global-linear-bounded-v1";
+          formula_config: RelevanceFormulaConfig;
+          activated_at: string;
+        };
+        Insert: {
+          exam_code: string;
+          publication_id: string;
+          mode: RelevanceEngineMode;
+          formula_version: "global-linear-bounded-v1";
+          formula_config: RelevanceFormulaConfig;
+          activated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["relevance_engine_activations"]["Row"]>;
+        Relationships: [];
+      };
+      canonical_topics: {
+        Row: {
+          topic_id: string;
+          first_publication_id: string;
+          created_at: string;
+        };
+        Insert: {
+          topic_id: string;
+          first_publication_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["canonical_topics"]["Row"]>;
+        Relationships: [];
+      };
+      canonical_topic_versions: {
+        Row: {
+          publication_id: string;
+          topic_id: string;
+          canonical_name: string;
+          source_major_area: string;
+          major_area: Exclude<MajorArea, "A classificar">;
+          specialty: string;
+          editorial_signal: string | null;
+          confidence: "alta" | "média";
+          rationale: string | null;
+          reference_year: number;
+        };
+        Insert: Database["public"]["Tables"]["canonical_topic_versions"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["canonical_topic_versions"]["Row"]>;
+        Relationships: [];
+      };
+      canonical_topic_aliases: {
+        Row: {
+          publication_id: string;
+          topic_id: string;
+          alias: string;
+          normalized_alias: string;
+        };
+        Insert: Database["public"]["Tables"]["canonical_topic_aliases"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["canonical_topic_aliases"]["Row"]>;
+        Relationships: [];
+      };
+      topic_relevance_scores: {
+        Row: {
+          publication_id: string;
+          topic_id: string;
+          exam_code: string;
+          score: number;
+          reference_year: number;
+        };
+        Insert: Database["public"]["Tables"]["topic_relevance_scores"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["topic_relevance_scores"]["Row"]>;
+        Relationships: [];
+      };
+      course_catalog_releases: {
+        Row: {
+          id: string;
+          publication_id: string;
+          provider_code: string;
+          provider_name: string;
+          release_name: string;
+          source_document: string;
+          source_edition: string;
+          source_volume: string;
+          source_extracted_on: string | null;
+          source_sha256: string;
+          status: CatalogReleaseStatus;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          publication_id: string;
+          provider_code: string;
+          provider_name: string;
+          release_name: string;
+          source_document: string;
+          source_edition: string;
+          source_volume: string;
+          source_extracted_on?: string | null;
+          source_sha256: string;
+          status: CatalogReleaseStatus;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["course_catalog_releases"]["Row"]>;
+        Relationships: [];
+      };
+      course_catalog_item_tombstones: {
+        Row: {
+          provider_code: string;
+          external_id: string;
+          publication_id: string;
+          reason: string;
+          created_at: string;
+        };
+        Insert: {
+          provider_code: string;
+          external_id: string;
+          publication_id: string;
+          reason: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["course_catalog_item_tombstones"]["Row"]>;
+        Relationships: [];
+      };
+      course_catalog_items: {
+        Row: {
+          id: string;
+          release_id: string;
+          publication_id: string;
+          external_id: string;
+          catalog_area: string;
+          title: string;
+          source_order: number;
+          major_area: Exclude<MajorArea, "A classificar">;
+          major_area_derivation: "highest_weight_topic_experimental";
+          specialty: string;
+          specialty_derivation: "unanimous_canonical_specialty" | "integrated_content";
+          effective_relevance: number;
+          workload_weight: number;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          release_id: string;
+          publication_id: string;
+          external_id: string;
+          catalog_area: string;
+          title: string;
+          source_order: number;
+          major_area: Exclude<MajorArea, "A classificar">;
+          major_area_derivation: "highest_weight_topic_experimental";
+          specialty: string;
+          specialty_derivation: "unanimous_canonical_specialty" | "integrated_content";
+          effective_relevance: number;
+          workload_weight: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["course_catalog_items"]["Row"]>;
+        Relationships: [];
+      };
+      course_catalog_item_topics: {
+        Row: {
+          item_id: string;
+          publication_id: string;
+          topic_id: string;
+          weight: number;
+        };
+        Insert: Database["public"]["Tables"]["course_catalog_item_topics"]["Row"];
+        Update: Partial<Database["public"]["Tables"]["course_catalog_item_topics"]["Row"]>;
         Relationships: [];
       };
       weekly_plans: {
@@ -275,6 +489,13 @@ export type Database = {
           performance_band: PerformanceBand | null;
           calculation_mode: CalculationMode;
           engine_version: string;
+          catalog_item_id: string | null;
+          relevance_version_id: string | null;
+          relevance_score: number | null;
+          relevance_factor: number | null;
+          relevance_formula_version: "global-linear-bounded-v1" | null;
+          relevance_formula_config: RelevanceFormulaConfig | null;
+          relevance_shadow_interval_days: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -316,6 +537,13 @@ export type Database = {
           performance_band?: PerformanceBand | null;
           calculation_mode?: CalculationMode;
           engine_version?: string;
+          catalog_item_id?: string | null;
+          relevance_version_id?: string | null;
+          relevance_score?: number | null;
+          relevance_factor?: number | null;
+          relevance_formula_version?: "global-linear-bounded-v1" | null;
+          relevance_formula_config?: RelevanceFormulaConfig | null;
+          relevance_shadow_interval_days?: number | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -345,6 +573,13 @@ export type Database = {
           previous_interval_days: number | null;
           new_interval_days: number | null;
           priority_score: number | null;
+          catalog_item_id: string | null;
+          relevance_version_id: string | null;
+          relevance_score: number | null;
+          relevance_factor: number | null;
+          relevance_formula_version: "global-linear-bounded-v1" | null;
+          relevance_formula_config: RelevanceFormulaConfig | null;
+          relevance_shadow_interval_days: number | null;
           created_at: string;
         };
         Insert: {
@@ -369,6 +604,13 @@ export type Database = {
           previous_interval_days?: number | null;
           new_interval_days?: number | null;
           priority_score?: number | null;
+          catalog_item_id?: string | null;
+          relevance_version_id?: string | null;
+          relevance_score?: number | null;
+          relevance_factor?: number | null;
+          relevance_formula_version?: "global-linear-bounded-v1" | null;
+          relevance_formula_config?: RelevanceFormulaConfig | null;
+          relevance_shadow_interval_days?: number | null;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["block_reviews"]["Row"]>;
@@ -398,6 +640,28 @@ export type Database = {
         };
         Returns: { block: QuestionBlock; review: BlockReview; replayed: boolean };
       };
+      get_catalog_suggestions: {
+        Args: {
+          p_release_id: string;
+          p_search?: string | null;
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: Array<{
+          catalog_release_id: string;
+          catalog_item_id: string;
+          external_id: string;
+          title: string;
+          catalog_area: string;
+          major_area: Exclude<MajorArea, "A classificar">;
+          specialty: string;
+          effective_score: number;
+          relevance_version_id: string;
+          topic_ids: string[];
+          workload_weight: number;
+          suggested_importance: Importance;
+        }>;
+      };
       replace_course_topics: {
         Args: {
           p_filename: string;
@@ -422,6 +686,9 @@ export type Area = Database["public"]["Tables"]["areas"]["Row"];
 export type StudentProfile = Database["public"]["Tables"]["student_profiles"]["Row"];
 export type CourseTopic = Database["public"]["Tables"]["course_topics"]["Row"];
 export type MetaMedTopic = Database["public"]["Tables"]["metamed_topics"]["Row"];
+export type RelevancePublication = Database["public"]["Tables"]["relevance_publications"]["Row"];
+export type CourseCatalogRelease = Database["public"]["Tables"]["course_catalog_releases"]["Row"];
+export type CatalogItem = Database["public"]["Tables"]["course_catalog_items"]["Row"];
 export type QuestionBlock = Database["public"]["Tables"]["question_blocks"]["Row"];
 export type QuestionBlockInsert = Database["public"]["Tables"]["question_blocks"]["Insert"];
 export type BlockReview = Database["public"]["Tables"]["block_reviews"]["Row"];

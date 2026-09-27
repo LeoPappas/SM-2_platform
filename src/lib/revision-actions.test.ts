@@ -71,6 +71,8 @@ function blockFixture(): QuestionBlock {
     last_review_date: "2026-09-01", planned_review_date: "2026-09-18", planning_source: "automatic",
     backlog_since: null, backlog_urgency: null, pre_exam_review_requested: false,
     performance_band: "ruim", calculation_mode: "performance", engine_version: "metamed-v1",
+    catalog_item_id: null, relevance_version_id: null, relevance_score: null, relevance_factor: null,
+    relevance_formula_version: null, relevance_formula_config: null, relevance_shadow_interval_days: null,
     created_at: "2026-09-01T15:00:00Z", updated_at: "version-0",
   };
 }
@@ -142,6 +144,25 @@ describe("review transaction and external Calendar boundary", () => {
     expect(blocks[0].calendar_sync_status).toBe("pending");
     expect(result.calculation.nextReviewDate).toBe(savedReviews[0].new_next_review_date);
     expect(result.calendarError).toBe("Calendar connection lost");
+  });
+
+  it("leaves numeric relevance snapshots for the database activation policy to derive", async () => {
+    blocks[0] = {
+      ...blockFixture(),
+      catalog_item_id: "catalog-item-1",
+      relevance_version_id: "relevance-version-1",
+      relevance_score: 9,
+    };
+
+    const result = await completeBlockReview(completionInput(blocks[0]));
+
+    expect(result.calculation.intervalDays).toBe(84);
+    expect(savedReviews[0].new_interval_days).toBe(84);
+    const submittedReview = (api.rpc.mock.calls[0][1] as CompletionArgs).p_review;
+    expect(submittedReview).not.toHaveProperty("relevance_factor");
+    expect(submittedReview).not.toHaveProperty("relevance_formula_version");
+    expect(submittedReview).not.toHaveProperty("relevance_formula_config");
+    expect(submittedReview).not.toHaveProperty("relevance_shadow_interval_days");
   });
 
   it("rejects a manual move made from an older revision without changing the newer schedule", async () => {

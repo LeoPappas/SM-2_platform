@@ -60,6 +60,15 @@ export type CatalogTopic = {
   majorArea: MajorArea;
   specialty: string;
   suggestedImportance: Importance;
+  /** Stable catalog identity. It is absent for legacy and uploaded lists. */
+  catalogItemId?: string | null;
+  externalItemId?: string | null;
+  /** Published GLOBAL relevance snapshot for this catalog item. */
+  relevanceScore?: number | null;
+  relevanceVersionId?: string | null;
+  canonicalTopicIds?: string[];
+  /** Relative queue effort proxy; currently the number of linked canonical topics. */
+  workloadWeight?: number;
 };
 
 export const REFERENCE_TOPICS: readonly CatalogTopic[] = [

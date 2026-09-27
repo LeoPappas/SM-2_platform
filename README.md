@@ -8,7 +8,7 @@ Plataforma semanal de revisao por temas para estudantes de medicina. O aluno cad
 - Rotina habitual com ajuste por semana, pausa com capacidade zero e restauracao do padrao.
 - Catalogo MetaMed com 184 aulas ou importacao privada de CSV/TSV do cursinho.
 - Cinco grandes areas fixas e especialidades padronizadas.
-- Cadastro por selecao no catalogo vigente; a base canonica e a relevancia numerica propostas ainda aguardam validacao editorial.
+- Cadastro por selecao no catalogo vigente de 184 aulas. A base canonica v3 esta validada estruturalmente em staging, mas continua inativa enquanto as pendencias editoriais e de proveniencia sao reconciliadas.
 - Motor deterministico proprio, isolado da interface.
 - Regra de amostra pequena para menos de 20 questoes.
 - Planejamento semanal: atrasos FIFO, revisoes devidas por prioridade e antecipacoes elegiveis somente com vagas restantes.
@@ -44,6 +44,7 @@ Os valores experimentais podem ser alterados em `/dashboard/simulador` sem afeta
 - Node.js 20.9 ou superior
 - npm
 - Projeto Supabase com Google OAuth habilitado
+- Python 3.11 e `openpyxl` 3.1 ou superior apenas para regenerar a carga da relevancia v3 a partir da planilha-fonte
 
 ## Configuracao
 
@@ -68,6 +69,7 @@ supabase/migrations/20260806212017_student_profile_and_course_catalog.sql
 supabase/migrations/20260806213252_course_topics_area_uniqueness.sql
 supabase/migrations/20260806213415_atomic_course_topic_replacement.sql
 supabase/migrations/20260918230725_weekly_availability_and_review_occurrences.sql
+supabase/migrations/20260927180243_relevance_catalog_v3_foundation.sql
 ```
 
 A migration e aditiva, preserva os blocos existentes e cria:
@@ -99,6 +101,30 @@ npm install --prefix $weeklyVerificationDir --no-save @electric-sql/pglite
 $env:PGLITE_MODULE = Join-Path $weeklyVerificationDir 'node_modules/@electric-sql/pglite/dist/index.js'
 node scripts/verify-weekly-planning.mjs
 ```
+
+## Relevancia v3 em staging
+
+A v3 foi importada como uma publicacao imutavel e versionada, separada do catalogo ativo. A migracao cria a taxonomia canonica, os tres catalogos de curso, os vinculos ponderados, a publicacao de relevancia GLOBAL/2026 e os campos de snapshot necessarios para comparar o motor numerico. Ela nao ativa catalogo nem motor, nao altera as datas reais de revisao e nao substitui as 184 aulas hoje exibidas no produto.
+
+O artefato gerado esta fixado aos hashes das fontes e valida 492 temas, 920 itens e 1.235 vinculos. `MC-186` fica reservado por tombstone; `MC-375` e o item mantido. A auditoria estrutural passou, mas as divergencias documentais e o manifesto de inclusoes/exclusoes dos cronogramas ainda precisam ser fechados antes da ativacao.
+
+Para conferir as fontes sem gerar arquivos, defina a pasta que contem os dois documentos e execute cada linha separadamente:
+
+```powershell
+$relevanceSourceDir = 'C:\caminho\para\SM2'
+python scripts/generate-relevance-catalog-v3.py --workbook (Join-Path $relevanceSourceDir 'MetaMed_relevancia_v3.xlsx') --technical-document (Join-Path $relevanceSourceDir 'MetaMed_relevancia_documento_tecnico_v2') --check-only
+```
+
+A verificacao isolada da migracao tambem usa PGlite fora das dependencias da aplicacao:
+
+```powershell
+$relevanceVerificationDir = Join-Path $env:TEMP 'metamed-pglite-relevance-verify'
+npm install --prefix $relevanceVerificationDir --no-save @electric-sql/pglite
+$env:PGLITE_MODULE = Join-Path $relevanceVerificationDir 'node_modules/@electric-sql/pglite/dist/index.js'
+node scripts/verify-relevance-catalog.mjs
+```
+
+A ativacao exige uma decisao separada e auditavel para o release do catalogo e, depois, para o modo `shadow` do motor. O calculo experimental aparece no simulador, mas snapshots de comparacao em revisoes reais so sao criados no banco quando existe uma ativacao GLOBAL em modo `shadow`. O modo ativo ainda nao existe nesta versao e deve ser introduzido por outra migracao somente depois da calibracao.
 
 ## Desenvolvimento local
 

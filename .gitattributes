@@ -1,0 +1,3 @@
+# Generated relevance artifacts are hashed byte-for-byte by the verifier.
+/supabase/migrations/20260927180243_relevance_catalog_v3_foundation.sql text eol=lf
+/outputs/MetaMed_relevancia_v3_manifest.json text eol=lf
