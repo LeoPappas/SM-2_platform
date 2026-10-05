@@ -44,16 +44,16 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center shadow-lg">
-        <Image src="/metamed-logo.svg" alt="" width={62} height={56} className="mx-auto mb-5 h-14 w-16 object-contain" priority />
-        <h1 className="mb-2 text-2xl font-semibold text-gray-950"><BrandName /> Revisão</h1>
-        <p className="mb-8 text-gray-500">Quais temas você precisa revisar nesta semana?</p>
+      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-8 text-center shadow-md">
+        <Image src="/metamed-logo.svg" alt="" width={56} height={56} className="mx-auto mb-5 h-14 w-14 object-contain" priority />
+        <h1 className="mb-2 text-2xl font-bold text-gray-900"><BrandName /> Revisão</h1>
+        <p className="mb-8 text-sm text-gray-500">Quais temas você precisa revisar nesta semana?</p>
 
         <button
           onClick={handleGoogleLogin}
-          className="flex w-full items-center justify-center gap-3 rounded-md border border-gray-300 bg-white px-4 py-3 font-medium text-gray-700 transition-colors hover:border-blue-500 hover:bg-blue-50 focus:ring-4 focus:ring-blue-100"
+          className="flex h-12 w-full items-center justify-center gap-3 rounded-md border border-gray-300 bg-white px-6 text-base font-semibold tracking-snug text-gray-900 transition-colors hover:bg-gray-100"
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M22.56 12.25C22.56 11.47 22.49 10.72 22.36 10H12V14.26H17.92C17.66 15.63 16.88 16.78 15.72 17.56V20.32H19.28C21.36 18.41 22.56 15.6 22.56 12.25Z" fill="#4285F4" />
             <path d="M12 23C14.97 23 17.46 22.02 19.28 20.32L15.72 17.56C14.74 18.22 13.48 18.63 12 18.63C9.13 18.63 6.71 16.69 5.84 14.08H2.17V16.92C3.98 20.53 7.69 23 12 23Z" fill="#34A853" />
             <path d="M5.84 14.08C5.62 13.42 5.49 12.72 5.49 12C5.49 11.28 5.62 10.58 5.84 9.92V7.08H2.17C1.43 8.55 1 10.22 1 12C1 13.78 1.43 15.45 2.17 16.92L5.84 14.08Z" fill="#FBBC05" />

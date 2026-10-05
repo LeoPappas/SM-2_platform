@@ -113,6 +113,18 @@ textarea:focus-visible {
     @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold tracking-snug text-gray-900 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-mist-500;
   }
 
+  .button-danger {
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-red-600 bg-red-600 px-5 text-sm font-semibold tracking-snug text-white transition-colors hover:border-red-700 hover:bg-red-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-mist-500;
+  }
+
+  .card {
+    @apply rounded-lg border border-gray-200 bg-white shadow-sm;
+  }
+
+  .modal-panel {
+    @apply rounded-xl bg-white shadow-xl;
+  }
+
   .icon-button {
     @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-mist-500;
   }

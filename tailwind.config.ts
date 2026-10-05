@@ -74,9 +74,6 @@ const config: Config = {
         green,
         amber,
         red,
-        // No teal/cyan in the brand: both resolve to the blue ramp.
-        teal: blue,
-        cyan: blue,
       },
       fontFamily: {
         sans: ["Poppins", "Helvetica Neue", "Arial", "sans-serif"],
