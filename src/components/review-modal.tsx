@@ -108,10 +108,10 @@ export function ReviewModal({
   if (result?.calculation.fallsAfterExam) {
     return (
       <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
-        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-amber-50 text-amber-700">
           <CalendarClock size={22} />
         </div>
-        <h2 id={titleId} className="mt-5 text-lg font-semibold text-gray-950">A próxima janela cai depois da prova</h2>
+        <h2 id={titleId} className="mt-5 text-lg font-semibold text-gray-900">A próxima janela cai depois da prova</h2>
         <p className="mt-2 text-sm leading-6 text-gray-600">
           O intervalo calculado foi mantido em {result.calculation.intervalDays} dias. Você quer separar este tema para uma última revisão antes de {formatDate(examDate)}?
         </p>
@@ -122,7 +122,7 @@ export function ReviewModal({
             type="button"
             onClick={() => decidePreExam(true)}
             disabled={submitting}
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            className="button-primary"
           >
             <Check size={16} /> Garantir última revisão
           </button>
@@ -130,7 +130,7 @@ export function ReviewModal({
             type="button"
             onClick={() => decidePreExam(false)}
             disabled={submitting}
-            className="rounded-md border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="button-secondary"
           >
             Não preciso revisar
           </button>
@@ -143,7 +143,7 @@ export function ReviewModal({
     return (
       <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
         <Check size={24} className="text-emerald-700" />
-        <h2 id={titleId} className="mt-4 text-lg font-semibold text-gray-950">Revisão salva</h2>
+        <h2 id={titleId} className="mt-4 text-lg font-semibold text-gray-900">Revisão salva</h2>
         <p className="mt-2 text-sm leading-6 text-gray-600">Próxima sugestão: {formatDate(result.calculation.nextReviewDate)}.</p>
         {result.calendarError && <p role="status" className="mt-3 text-sm leading-6 text-amber-800">Seu estudo foi registrado. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.</p>}
         {error && <ErrorMessage>{error}</ErrorMessage>}
@@ -156,8 +156,8 @@ export function ReviewModal({
     <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold text-emerald-700">{block.major_area} · {block.specialty}</p>
-          <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-950">Registrar revisão</h2>
+          <p className="page-eyebrow">{block.major_area} · {block.specialty}</p>
+          <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-900">Registrar revisão</h2>
           <p className="mt-1 text-sm text-gray-500">{block.title}</p>
         </div>
         <button type="button" onClick={onClose} disabled={submitting} className="icon-button" aria-label="Fechar">
@@ -237,7 +237,7 @@ export function ReviewModal({
         <div className={`rounded-md border px-3.5 py-3 ${smallSample ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50"}`}>
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm text-gray-600">Desempenho</span>
-            <span className="text-sm font-semibold tabular-nums text-gray-950">{correctCount}/{questionCount} · {accuracy}%</span>
+            <span className="text-sm font-semibold tabular-nums text-gray-900">{correctCount}/{questionCount} · {accuracy}%</span>
           </div>
           {smallSample && (
             <div className="mt-2 flex gap-2 border-t border-amber-200 pt-2 text-xs leading-5 text-amber-900">
@@ -272,7 +272,7 @@ function DialogShell({ children, onClose, busy, titleId }: { children: React.Rea
     <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} onMouseDown={event => {
       if (event.target === event.currentTarget && !busy) onClose();
     }}>
-      <div ref={panelRef} tabIndex={-1} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div ref={panelRef} tabIndex={-1} className="modal-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-6">
         {children}
       </div>
     </div>
@@ -282,9 +282,9 @@ function DialogShell({ children, onClose, busy, titleId }: { children: React.Rea
 function Field({ label, optional, children }: { label: string; optional?: boolean; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 flex items-center justify-between text-sm font-medium text-gray-700">
+      <span className="mb-1.5 flex items-center justify-between text-sm font-medium text-gray-900">
         {label}
-        {optional && <span className="text-xs font-normal text-gray-400">Opcional</span>}
+        {optional && <span className="text-xs font-normal text-gray-500">Opcional</span>}
       </span>
       {children}
     </label>

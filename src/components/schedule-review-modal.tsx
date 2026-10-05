@@ -86,11 +86,11 @@ export function ScheduleReviewModal({
         if (event.target === event.currentTarget && !submitting) onClose();
       }}
     >
-      <div ref={panelRef} tabIndex={-1} className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div ref={panelRef} tabIndex={-1} className="modal-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-emerald-700">{block.major_area} · {block.specialty}</p>
-            <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-950">Escolher um dia</h2>
+            <p className="page-eyebrow">{block.major_area} · {block.specialty}</p>
+            <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-900">Escolher um dia</h2>
             <p className="mt-1 text-sm text-gray-500">{block.title}</p>
           </div>
           <button type="button" onClick={onClose} disabled={submitting} className="icon-button" aria-label="Fechar">
@@ -100,7 +100,7 @@ export function ScheduleReviewModal({
 
         <form onSubmit={submit} className="mt-6 space-y-4">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-gray-700">Dia da revisão</span>
+            <span className="mb-1.5 block text-sm font-medium text-gray-900">Dia da revisão</span>
             <input
               type="date"
               data-modal-initial-focus
@@ -116,7 +116,7 @@ export function ScheduleReviewModal({
           {availableDates.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {availableDates.map(availableDate => (
-                <button key={availableDate} type="button" onClick={() => setDate(availableDate)} className={`rounded-md border px-3 py-2 text-xs font-semibold ${date === availableDate ? "border-emerald-700 bg-emerald-50 text-emerald-800" : "border-gray-200 text-gray-600 hover:border-gray-300"}`}>
+                <button key={availableDate} type="button" onClick={() => setDate(availableDate)} className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${date === availableDate ? "border-blue-700 bg-blue-700 text-white" : "border-gray-300 text-gray-700 hover:bg-gray-100"}`}>
                   {new Intl.DateTimeFormat("pt-BR", { weekday: "short", day: "2-digit" }).format(new Date(`${availableDate}T12:00:00`))}
                 </button>
               ))}
@@ -144,7 +144,7 @@ export function ScheduleReviewModal({
                 type="button"
                 onClick={unschedule}
                 disabled={submitting || saved}
-                className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-mist-500"
               >
                 <CalendarX size={16} /> Usar sugestão automática
               </button>

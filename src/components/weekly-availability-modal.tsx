@@ -51,10 +51,10 @@ export function WeeklyAvailabilityModal({
     <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={saving} onMouseDown={event => {
       if (event.target === event.currentTarget && !saving) onClose();
     }}>
-      <div ref={panelRef} tabIndex={-1} className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div ref={panelRef} tabIndex={-1} className="modal-panel max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 id={titleId} className="text-lg font-semibold text-gray-950">Ajustar esta semana</h2>
+            <h2 id={titleId} className="text-lg font-semibold text-gray-900">Ajustar esta semana</h2>
             <p className="mt-2 text-sm leading-6 text-gray-600">Escolha quantas revisões cabem em cada dia. Sua rotina habitual permanece igual.</p>
           </div>
           <button type="button" className="icon-button" aria-label="Fechar" disabled={saving} onClick={onClose}><X size={18} /></button>
@@ -76,7 +76,7 @@ export function WeeklyAvailabilityModal({
               );
             })}
           </div>
-          <p className="mt-4 text-sm text-gray-600"><strong className="font-semibold text-gray-950">{total} revisões</strong> de capacidade nesta semana.</p>
+          <p className="mt-4 text-sm text-gray-600"><strong className="font-semibold text-gray-900">{total} revisões</strong> de capacidade nesta semana.</p>
           {total === 0 && <p role="status" className="mt-2 text-sm leading-6 text-amber-800">Nenhuma revisão será distribuída automaticamente. Você ainda pode estudar ou escolher datas manualmente.</p>}
           {error && <p role="alert" className="mt-4 rounded-md bg-amber-50 p-3 text-sm leading-6 text-amber-900">{saved ? "A disponibilidade foi salva. Atualize a página para conferir o plano." : error}</p>}
           <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4">

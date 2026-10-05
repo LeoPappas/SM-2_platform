@@ -262,11 +262,11 @@ export function TopicFormModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto rounded-lg bg-white p-6 shadow-2xl sm:p-7">
+      <div className="modal-panel max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto p-6 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-emerald-700">{editing ? "Organização do tema" : "Primeiro contato"}</p>
-            <h2 className="mt-1 text-xl font-semibold text-gray-950">{editing ? "Editar tema" : "Registrar tema estudado"}</h2>
+            <p className="page-eyebrow">{editing ? "Organização do tema" : "Primeiro contato"}</p>
+            <h2 className="mt-1 text-xl font-semibold text-gray-900">{editing ? "Editar tema" : "Registrar tema estudado"}</h2>
           </div>
           <button type="button" onClick={onClose} className="icon-button" aria-label="Fechar">
             <X size={18} />
@@ -296,7 +296,7 @@ export function TopicFormModal({
 
           {!editing && (
             <div className="border-t border-gray-200 pt-6">
-              <h3 className="text-sm font-semibold text-gray-950">Desempenho no primeiro contato</h3>
+              <h3 className="text-sm font-semibold text-gray-900">Desempenho no primeiro contato</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <Field label="Data do primeiro contato">
                   <input type="date" required max={format(new Date(), "yyyy-MM-dd")} value={studyDate} onChange={event => setStudyDate(event.target.value)} className="field-control" />
@@ -325,7 +325,7 @@ export function TopicFormModal({
               <div className={`mt-4 rounded-md border px-3.5 py-3 text-sm ${smallSample ? "border-amber-200 bg-amber-50 text-amber-900" : "border-gray-200 bg-gray-50 text-gray-600"}`}>
                 <div className="flex items-center justify-between gap-3">
                   <span>Acurácia</span>
-                  <span className="font-semibold tabular-nums text-gray-950">{correctCount}/{questionCount} · {accuracy}%</span>
+                  <span className="font-semibold tabular-nums text-gray-900">{correctCount}/{questionCount} · {accuracy}%</span>
                 </div>
                 {smallSample && (
                   <div className="mt-2 flex gap-2 border-t border-amber-200 pt-2 text-xs leading-5">
@@ -354,9 +354,9 @@ export function TopicFormModal({
 function Field({ label, optional, children }: { label: string; optional?: boolean; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 flex items-center justify-between text-sm font-medium text-gray-700">
+      <span className="mb-1.5 flex items-center justify-between text-sm font-medium text-gray-900">
         {label}
-        {optional && <span className="text-xs font-normal text-gray-400">Opcional</span>}
+        {optional && <span className="text-xs font-normal text-gray-500">Opcional</span>}
       </span>
       {children}
     </label>

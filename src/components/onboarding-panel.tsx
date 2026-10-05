@@ -227,8 +227,8 @@ export function OnboardingPanel({
     <div className={compact ? "w-full" : "mx-auto w-full max-w-4xl px-5 py-8 sm:px-8 sm:py-12"}>
       {!compact && (
         <header className="mb-10 max-w-2xl">
-          <p className="text-xs font-semibold text-emerald-700">Configuração inicial</p>
-          <h1 className="mt-2 text-3xl font-semibold text-gray-950">Como a <BrandName /> entra na sua rotina?</h1>
+          <p className="page-eyebrow">Configuração inicial</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-gray-900">Como a <BrandName /> entra na sua rotina?</h1>
           <p className="mt-3 text-base leading-7 text-gray-600">Defina sua disponibilidade e a base de temas que será usada no planejamento.</p>
         </header>
       )}
@@ -245,7 +245,7 @@ export function OnboardingPanel({
           <div className="grid max-w-3xl grid-cols-4 gap-2 sm:grid-cols-7">
             {weekDays.map(day => {
               const selected = studyDays.includes(day.value);
-              return <button key={day.value} type="button" onClick={() => toggleDay(day.value)} aria-pressed={selected} title={day.label} className={`h-11 rounded-md border text-sm font-semibold ${selected ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-300 bg-white text-gray-600 hover:border-gray-400"}`}>{day.short}</button>;
+              return <button key={day.value} type="button" onClick={() => toggleDay(day.value)} aria-pressed={selected} title={day.label} className={`h-11 rounded-md border text-sm font-semibold transition-colors ${selected ? "border-blue-700 bg-blue-700 text-white" : "border-gray-300 bg-white text-gray-700 hover:bg-gray-100"}`}>{day.short}</button>;
             })}
           </div>
         </FormSection>
@@ -257,10 +257,10 @@ export function OnboardingPanel({
               <span className="w-20 text-center text-sm font-semibold tabular-nums">{dailyCapacity}</span>
               <button type="button" onClick={() => changeDailyCapacity(1)} className="icon-button rounded-none border-l border-gray-200" aria-label="Aumentar capacidade"><Plus size={16} /></button>
             </div>}
-            <p className="text-sm text-gray-600"><strong className="font-semibold text-gray-950">{weeklyCapacity} temas por semana</strong> em {studyDays.length} {studyDays.length === 1 ? "dia" : "dias"}</p>
+            <p className="text-sm text-gray-600"><strong className="font-semibold text-gray-900">{weeklyCapacity} temas por semana</strong> em {studyDays.length} {studyDays.length === 1 ? "dia" : "dias"}</p>
           </div>
           <label className="mt-5 flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={customDailyCapacity} onChange={event => setCustomDailyCapacity(event.target.checked)} className="h-4 w-4 accent-emerald-700" />
+            <input type="checkbox" checked={customDailyCapacity} onChange={event => setCustomDailyCapacity(event.target.checked)} className="h-4 w-4 accent-blue-700" />
             Definir uma capacidade diferente para cada dia
           </label>
           {customDailyCapacity && (
@@ -268,7 +268,7 @@ export function OnboardingPanel({
               {weekDays.map(day => (
                 <label key={day.value} className="block">
                   <span className="mb-1.5 block text-xs font-medium text-gray-600">{day.short}</span>
-                  <input type="number" aria-label={`Capacidade de ${day.label.toLocaleLowerCase("pt-BR")}`} min={1} max={20} disabled={!studyDays.includes(day.value)} value={studyDays.includes(day.value) ? dailyCapacities[String(day.value)] ?? dailyCapacity : 0} onChange={event => setDailyCapacities(current => ({ ...current, [String(day.value)]: Math.min(20, Math.max(1, Number(event.target.value))) }))} className="field-control disabled:bg-gray-100 disabled:text-gray-400" />
+                  <input type="number" aria-label={`Capacidade de ${day.label.toLocaleLowerCase("pt-BR")}`} min={1} max={20} disabled={!studyDays.includes(day.value)} value={studyDays.includes(day.value) ? dailyCapacities[String(day.value)] ?? dailyCapacity : 0} onChange={event => setDailyCapacities(current => ({ ...current, [String(day.value)]: Math.min(20, Math.max(1, Number(event.target.value))) }))} className="field-control disabled:bg-gray-100 disabled:text-gray-500" />
                 </label>
               ))}
             </div>
@@ -300,9 +300,9 @@ export function OnboardingPanel({
             <Choice selected={catalogSource === "upload"} onClick={() => setCatalogSource("upload")} title="Lista do meu cursinho" description="Envie um CSV, TSV ou TXT." />
           </div>
           {catalogSource === "upload" && (
-            <label className="mt-4 flex max-w-3xl cursor-pointer items-center justify-between gap-4 rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-4 hover:border-emerald-500 hover:bg-emerald-50/40">
-              <span className="flex min-w-0 items-center gap-3"><FileUp size={19} className="shrink-0 text-emerald-700" /><span className="truncate text-sm font-medium text-gray-700">{catalogFilename || "Escolher arquivo"}</span></span>
-              <span className="shrink-0 text-xs font-semibold text-emerald-700">{uploadedTopics ? `${uploadedTopics.length} temas` : "Procurar"}</span>
+            <label className="mt-4 flex max-w-3xl cursor-pointer items-center justify-between gap-4 rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-4 transition-colors hover:border-blue-700 hover:bg-blue-50">
+              <span className="flex min-w-0 items-center gap-3"><FileUp size={19} className="shrink-0 text-blue-700" /><span className="truncate text-sm font-medium text-gray-700">{catalogFilename || "Escolher arquivo"}</span></span>
+              <span className="shrink-0 text-xs font-semibold text-blue-700">{uploadedTopics ? `${uploadedTopics.length} temas` : "Procurar"}</span>
               <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={event => chooseFile(event.target.files?.[0])} className="sr-only" />
             </label>
           )}
@@ -311,7 +311,7 @@ export function OnboardingPanel({
         <FormSection title="Google Calendar" description="Quando habilitado, todos os blocos de estudo são criados e atualizados automaticamente no seu calendário.">
           {googleConnected ? (
             <div className="max-w-3xl space-y-4">
-              <div className="flex items-center gap-3 text-sm font-medium text-emerald-800"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-100"><Check size={17} /></span>Conta Google vinculada</div>
+              <div className="flex items-center gap-3 text-sm font-medium text-emerald-700"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50"><Check size={17} /></span>Conta Google vinculada</div>
               <button type="button" onClick={connectGoogle} disabled={connectingGoogle} className="button-secondary"><Link2 size={16} /> {connectingGoogle ? "Reconectando..." : "Reconectar Google Calendar"}</button>
               <p className="text-xs leading-5 text-gray-500">Renove a permissão usando a mesma conta Google quando houver falha de sincronização.</p>
               <button
@@ -322,10 +322,10 @@ export function OnboardingPanel({
                 className="flex w-full items-center justify-between gap-5 border-t border-gray-200 pt-4 text-left"
               >
                 <span>
-                  <span className="block text-sm font-semibold text-gray-950">Sincronizar blocos de estudo</span>
+                  <span className="block text-sm font-semibold text-gray-900">Sincronizar blocos de estudo</span>
                   <span className="mt-1 block text-xs leading-5 text-gray-500">Alterações de datas, conteúdo e conclusão serão refletidas no Google Calendar.</span>
                 </span>
-                <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${calendarSyncEnabled ? "bg-emerald-700" : "bg-gray-300"}`}>
+                <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${calendarSyncEnabled ? "bg-blue-700" : "bg-gray-300"}`}>
                   <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${calendarSyncEnabled ? "translate-x-6" : "translate-x-1"}`} />
                 </span>
               </button>
@@ -346,7 +346,7 @@ export function OnboardingPanel({
         </FormSection>
 
         {error && <div className="max-w-3xl rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-        {savedMessage && <div role="status" className="max-w-3xl rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">{savedMessage}</div>}
+        {savedMessage && <div role="status" className="max-w-3xl rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">{savedMessage}</div>}
         <div className="flex max-w-3xl justify-end border-t border-gray-200 pt-6">
           <button type="submit" disabled={submitting} className="button-primary min-w-40"><Check size={16} /> {submitting ? "Salvando..." : compact ? "Salvar alterações" : "Concluir configuração"}</button>
         </div>
@@ -365,11 +365,11 @@ function timezoneLabel(value: string) {
 }
 
 function FormSection({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
-  return <section className="max-w-4xl border-b border-gray-200 pb-10 last:border-0"><h2 className="text-base font-semibold text-gray-950">{title}</h2>{description && <p className="mt-1 text-sm leading-6 text-gray-500">{description}</p>}<div className="mt-4">{children}</div></section>;
+  return <section className="max-w-4xl border-b border-gray-200 pb-10 last:border-0"><h2 className="text-base font-semibold text-gray-900">{title}</h2>{description && <p className="mt-1 text-sm leading-6 text-gray-500">{description}</p>}<div className="mt-4">{children}</div></section>;
 }
 
 function Choice({ selected, onClick, title, description }: { selected: boolean; onClick: () => void; title: React.ReactNode; description: string }) {
-  return <button type="button" onClick={onClick} aria-pressed={selected} className={`flex min-h-24 items-start gap-3 rounded-md border p-4 text-left ${selected ? "border-emerald-700 bg-emerald-50" : "border-gray-300 bg-white hover:border-gray-400"}`}><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-emerald-700 bg-emerald-700 text-white" : "border-gray-300"}`}>{selected && <Check size={12} />}</span><span><span className="block text-sm font-semibold text-gray-950">{title}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{description}</span></span></button>;
+  return <button type="button" onClick={onClick} aria-pressed={selected} className={`flex min-h-24 items-start gap-3 rounded-md border p-4 text-left transition-colors ${selected ? "border-blue-700 bg-blue-50" : "border-gray-300 bg-white hover:bg-gray-100"}`}><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-700 bg-blue-700 text-white" : "border-gray-300"}`}>{selected && <Check size={12} />}</span><span><span className="block text-sm font-semibold text-gray-900">{title}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{description}</span></span></button>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -377,5 +377,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <span className="mb-1.5 block text-sm font-medium text-gray-700">{children}</span>;
+  return <span className="mb-1.5 block text-sm font-medium text-gray-900">{children}</span>;
 }
