@@ -123,7 +123,7 @@ export default function TemasPage() {
       <header className="page-header">
         <div>
           <h1 className="page-title">
-            Temas estudados <span className="ml-2 align-middle text-base font-semibold text-emerald-700">{blocks.length}</span>
+            Temas estudados <span className="ml-2 align-middle text-base font-semibold text-blue-700">{blocks.length}</span>
           </h1>
         </div>
         <button type="button" onClick={() => setFormBlock("new")} className="button-primary">
@@ -133,7 +133,7 @@ export default function TemasPage() {
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
           <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar tema ou especialidade" className="field-control pl-9" />
         </label>
         <select value={areaFilter} onChange={event => setAreaFilter(event.target.value as MajorArea | "todas")} className="field-control sm:w-56">
@@ -150,7 +150,7 @@ export default function TemasPage() {
           {blocks.length === 0 && <button type="button" onClick={() => setFormBlock("new")} className="button-secondary"><Plus size={15} /> Novo tema</button>}
         </div>
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+        <div className="overflow-hidden card">
           <div className="hidden grid-cols-[minmax(18rem,1fr)_10rem_11rem_8rem] border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-500 lg:grid">
             <span>Tema</span>
             <span>Número de contatos</span>
@@ -215,15 +215,15 @@ function TopicRow({
     <div className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(18rem,1fr)_10rem_11rem_8rem] lg:items-center">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <h2 className="truncate text-base font-semibold text-gray-950">{block.title}</h2>
-          {block.major_area === "A classificar" && <span className="status-badge bg-amber-100 text-amber-800">Classificar</span>}
-          {block.calendar_sync_enabled && block.calendar_sync_status === "pending" && <span className="status-badge bg-gray-100 text-gray-600">Sincronizando</span>}
-          {block.calendar_sync_enabled && block.calendar_sync_status === "failed" && <span className="status-badge bg-red-100 text-red-700">Reconectar Calendar</span>}
+          <h2 className="truncate text-base font-semibold text-gray-900">{block.title}</h2>
+          {block.major_area === "A classificar" && <span className="status-badge bg-amber-50 text-amber-700">Classificar</span>}
+          {block.calendar_sync_enabled && block.calendar_sync_status === "pending" && <span className="status-badge bg-gray-200 text-gray-800">Sincronizando</span>}
+          {block.calendar_sync_enabled && block.calendar_sync_status === "failed" && <span className="status-badge bg-red-50 text-red-700">Reconectar Calendar</span>}
         </div>
         <p className="mt-1 truncate text-xs font-medium text-gray-500">{block.major_area} · {block.specialty}</p>
       </div>
       <div>
-        <span className="block text-sm font-semibold tabular-nums text-gray-950">{contactCount}</span>
+        <span className="block text-sm font-semibold tabular-nums text-gray-900">{contactCount}</span>
         <span className="text-xs text-gray-500">{contactCount === 1 ? "contato" : "contatos"}</span>
       </div>
       <div className="text-sm font-medium text-gray-700">
@@ -243,17 +243,17 @@ function HistoryModal({ block, history, onClose }: { block: QuestionBlock; histo
   const firstContact = history.find(item => item.contact_type === "first_contact");
   return (
     <div className="dashboard-modal-overlay" role="dialog" aria-modal="true">
-      <div className="max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
+      <div className="modal-panel max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold text-emerald-700">Histórico estruturado</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-950">{block.title}</h2>
+            <p className="page-eyebrow">Histórico estruturado</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">{block.title}</h2>
             <p className="mt-1 text-sm text-gray-500">{block.major_area} · {block.specialty}</p>
           </div>
           <button type="button" onClick={onClose} className="icon-button" aria-label="Fechar"><X size={18} /></button>
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-md border border-gray-200">
+        <div className="mt-6 overflow-hidden rounded-lg border border-gray-200">
           <div className="grid grid-cols-[7rem_1fr_7rem_7rem] border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-500">
             <span>Data</span><span>Registro</span><span>Resultado</span><span>Intervalo</span>
           </div>
@@ -269,7 +269,7 @@ function HistoryModal({ block, history, onClose }: { block: QuestionBlock; histo
                 <span className="tabular-nums text-gray-700">{review.new_interval_days ?? "—"} dias</span>
               </div>
             ))}
-            <div className="grid grid-cols-[7rem_1fr_7rem_7rem] items-center bg-blue-50/50 px-4 py-3 text-sm">
+            <div className="grid grid-cols-[7rem_1fr_7rem_7rem] items-center bg-blue-50 px-4 py-3 text-sm">
               <span className="text-gray-600">{formatDate(firstContact?.review_date ?? block.study_date)}</span>
               <span>
                 <span className="block font-medium text-gray-900">Primeiro contato</span>
@@ -288,13 +288,13 @@ function HistoryModal({ block, history, onClose }: { block: QuestionBlock; histo
 function ConfirmDelete({ block, submitting, onCancel, onConfirm }: { block: QuestionBlock; submitting: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
     <div className="dashboard-modal-overlay" role="dialog" aria-modal="true">
-      <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-2xl">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-100 text-red-700"><Trash2 size={19} /></div>
-        <h2 className="mt-4 text-lg font-semibold text-gray-950">Excluir {block.title}?</h2>
+      <div className="modal-panel w-full max-w-sm p-6">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-50 text-red-700"><Trash2 size={19} /></div>
+        <h2 className="mt-4 text-lg font-semibold text-gray-900">Excluir {block.title}?</h2>
         <p className="mt-2 text-sm leading-6 text-gray-600">O histórico de revisões também será removido. Esta ação não pode ser desfeita.</p>
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="button-secondary">Cancelar</button>
-          <button type="button" onClick={onConfirm} disabled={submitting} className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+          <button type="button" onClick={onConfirm} disabled={submitting} className="button-danger">
             <Trash2 size={15} /> {submitting ? "Excluindo..." : "Excluir tema"}
           </button>
         </div>

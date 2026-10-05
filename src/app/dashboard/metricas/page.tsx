@@ -91,7 +91,7 @@ export default function PerformancePage() {
         </div>
       </header>
 
-      <section className="mb-6 grid grid-cols-2 border-y border-gray-200 lg:grid-cols-4">
+      <section className="mb-6 grid grid-cols-2 overflow-hidden card lg:grid-cols-4">
         <Metric icon={<BookOpenCheck size={17} />} label="Temas ativos" value={blocks.length} />
         <Metric icon={<Target size={17} />} label="Acurácia atual" value={latestAccuracy.accuracy === null ? "Sem amostra" : `${latestAccuracy.accuracy}%`} />
         <Metric icon={<BarChart3 size={17} />} label="Revisões em 30 dias" value={reviewsLast30Days} />
@@ -103,7 +103,7 @@ export default function PerformancePage() {
       </p>
 
       {unclassified > 0 && (
-        <div className="mb-5 flex gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+        <div className="mb-5 flex gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
           <AlertTriangle className="mt-0.5 shrink-0" size={17} />
           {unclassified === 1 ? "1 tema não entra" : `${unclassified} temas não entram`} na comparação por área até serem classificados.
         </div>
@@ -114,10 +114,10 @@ export default function PerformancePage() {
       ) : (
         <>
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.75fr)]">
-            <section className="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <section className="overflow-hidden card">
               <SectionHeading title="Progressão nas últimas 8 semanas" subtitle="Acertos sobre o total de questões das revisões, com o início de semana definido na sua rotina" />
               {reviews.length === 0 ? (
-                <div className="flex min-h-64 items-center justify-center px-5 text-sm text-gray-400">Registre revisões para formar a curva.</div>
+                <div className="flex min-h-64 items-center justify-center px-5 text-sm text-gray-500">Registre revisões para formar a curva.</div>
               ) : (
                 <div className="px-4 pb-5 pt-7 sm:px-6">
                   <div className="flex h-56 items-end gap-2 border-b border-gray-200 sm:gap-4">
@@ -125,7 +125,7 @@ export default function PerformancePage() {
                       <div key={week.key} title={week.average === null ? "Sem amostra de questões" : `${week.correctCount} acertos em ${week.questionCount} questões`} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end">
                         <span className="mb-2 text-xs font-semibold tabular-nums text-gray-700">{week.average !== null ? `${week.average}%` : <span aria-label="Sem amostra">—</span>}</span>
                         <div className="flex h-40 w-full max-w-12 items-end rounded-t bg-gray-100">
-                          <div className="w-full rounded-t bg-emerald-600" style={{ height: `${week.average === null ? 0 : week.average}%` }} />
+                          <div className="w-full rounded-t bg-blue-700" style={{ height: `${week.average === null ? 0 : week.average}%` }} />
                         </div>
                         <span className="mt-2 truncate text-[10px] font-medium text-gray-500">{week.label}</span>
                       </div>
@@ -136,7 +136,7 @@ export default function PerformancePage() {
               )}
             </section>
 
-            <section className="overflow-hidden rounded-md border border-gray-200 bg-white">
+            <section className="overflow-hidden card">
               <SectionHeading title="Distribuição atual" subtitle="Último resultado dos temas com questões registradas" />
               <div className="divide-y divide-gray-100">
                 {performanceDistribution.map(({ band, count }) => {
@@ -145,7 +145,7 @@ export default function PerformancePage() {
                     <div key={band} className="px-4 py-4">
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="font-medium text-gray-700">{performanceLabel(band)}</span>
-                        <span className="font-semibold tabular-nums text-gray-950">{count} · {percentage}%</span>
+                        <span className="font-semibold tabular-nums text-gray-900">{count} · {percentage}%</span>
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100"><div className={`h-full ${performanceTone(band)}`} style={{ width: `${percentage}%` }} /></div>
                     </div>
@@ -155,7 +155,7 @@ export default function PerformancePage() {
             </section>
           </div>
 
-          <section className="mt-6 overflow-hidden rounded-md border border-gray-200 bg-white">
+          <section className="mt-6 overflow-hidden card">
             <SectionHeading title="Cinco grandes áreas" subtitle="Acertos sobre as questões dos últimos contatos e quantidade de temas abaixo de 70%" />
             <div className="divide-y divide-gray-100">
               {areaMetrics.map((metric, index) => (
@@ -165,22 +165,22 @@ export default function PerformancePage() {
                     <span className="text-sm font-semibold text-gray-900">{metric.area}</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-gray-100"><div className={`h-full ${["bg-area-1", "bg-area-2", "bg-area-3", "bg-area-4", "bg-area-5"][index]}`} style={{ width: `${metric.average ?? 0}%` }} /></div>
-                  <span title={metric.average === null ? "Sem amostra" : `${metric.questionCount} questões`} className="text-sm font-semibold tabular-nums text-gray-950">{metric.average === null ? "Sem amostra" : `${metric.average}%`}</span>
-                  <span className={`text-xs font-medium ${metric.weak > 0 ? "text-red-600" : "text-gray-400"}`}>{metric.weak} {metric.weak === 1 ? "tema frágil" : "temas frágeis"}</span>
+                  <span title={metric.average === null ? "Sem amostra" : `${metric.questionCount} questões`} className="text-sm font-semibold tabular-nums text-gray-900">{metric.average === null ? "Sem amostra" : `${metric.average}%`}</span>
+                  <span className={`text-xs font-medium ${metric.weak > 0 ? "text-red-600" : "text-gray-500"}`}>{metric.weak} {metric.weak === 1 ? "tema frágil" : "temas frágeis"}</span>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="mt-6 overflow-hidden rounded-md border border-gray-200 bg-white">
+          <section className="mt-6 overflow-hidden card">
             <SectionHeading title="Temas que pedem atenção" subtitle="Ordenados pelo resultado mais baixo" />
             {weakTopics.length === 0 ? (
-              <div className="flex min-h-28 items-center justify-center px-5 text-sm text-gray-400">{measuredBlocks.length ? "Nenhum tema abaixo de 70%." : "Registre questões para identificar quais temas pedem atenção."}</div>
+              <div className="flex min-h-28 items-center justify-center px-5 text-sm text-gray-500">{measuredBlocks.length ? "Nenhum tema abaixo de 70%." : "Registre questões para identificar quais temas pedem atenção."}</div>
             ) : (
               <div className="divide-y divide-gray-100">
                 {weakTopics.map(block => (
                   <div key={block.id} className="grid gap-2 px-4 py-3.5 sm:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)_6rem_8rem] sm:items-center">
-                    <span className="truncate text-sm font-semibold text-gray-950">{block.title}</span>
+                    <span className="truncate text-sm font-semibold text-gray-900">{block.title}</span>
                     <span className="truncate text-xs text-gray-500">{block.major_area} · {block.specialty}</span>
                     <span className="text-sm font-semibold tabular-nums text-red-700">{block.accuracy_percentage}%</span>
                     <span className="text-xs text-gray-500">Retorna em {block.interval_days} dias</span>
@@ -199,19 +199,19 @@ function Metric({ icon, label, value, warning }: { icon: React.ReactNode; label:
   return (
     <div className="border-r border-gray-200 px-4 py-4 last:border-r-0">
       <div className={`flex items-center gap-2 text-xs font-medium ${warning ? "text-amber-700" : "text-gray-500"}`}>{icon}{label}</div>
-      <p className={`mt-1.5 text-xl font-semibold tabular-nums ${warning ? "text-amber-800" : "text-gray-950"}`}>{value}</p>
+      <p className={`mt-1.5 text-2xl font-bold tracking-tight tabular-nums ${warning ? "text-amber-800" : "text-gray-900"}`}>{value}</p>
     </div>
   );
 }
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) {
-  return <div className="border-b border-gray-200 px-4 py-3.5"><h2 className="text-sm font-semibold text-gray-950">{title}</h2><p className="mt-0.5 text-xs text-gray-500">{subtitle}</p></div>;
+  return <div className="border-b border-gray-200 px-4 py-3.5"><h2 className="text-sm font-semibold text-gray-900">{title}</h2><p className="mt-0.5 text-xs text-gray-500">{subtitle}</p></div>;
 }
 
 function performanceTone(band: ReturnType<typeof classifyPerformance>) {
   return {
     muito_bom: "bg-emerald-600",
-    bom: "bg-blue-500",
+    bom: "bg-blue-700",
     ruim: "bg-amber-500",
     muito_ruim: "bg-red-500",
   }[band];

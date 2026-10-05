@@ -137,10 +137,10 @@ export default function CalendarPage() {
         <button type="button" onClick={() => setCurrentMonth(new Date())} className="button-secondary"><CalendarClock size={16} /> Hoje</button>
       </header>
 
-      <section className="overflow-hidden rounded-md border border-gray-200 bg-white">
+      <section className="overflow-hidden card">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3.5">
           <button type="button" onClick={() => setCurrentMonth(month => subMonths(month, 1))} className="icon-button" aria-label="Mês anterior"><ChevronLeft size={18} /></button>
-          <h2 className="text-base font-semibold text-gray-950">{formatMonth(currentMonth)}</h2>
+          <h2 className="text-base font-semibold text-gray-900">{formatMonth(currentMonth)}</h2>
           <button type="button" onClick={() => setCurrentMonth(month => addMonths(month, 1))} className="icon-button" aria-label="Próximo mês"><ChevronRight size={18} /></button>
         </div>
 
@@ -160,7 +160,7 @@ export default function CalendarPage() {
               }).map(day => {
                 const unavailable = Boolean(profile && !profile.study_days.includes(day.isoDay));
                 return (
-                  <div key={day.label} className={`flex items-center justify-center border-r border-gray-300 py-2.5 text-center text-xs font-semibold last:border-r-0 ${unavailable ? "bg-gray-50/70 text-gray-400" : "text-gray-500"}`}>
+                  <div key={day.label} className={`flex items-center justify-center border-r border-gray-300 py-2.5 text-center text-xs font-semibold last:border-r-0 ${unavailable ? "bg-gray-50 text-gray-500" : "text-gray-500"}`}>
                     {day.label}
                   </div>
                 );
@@ -177,8 +177,8 @@ export default function CalendarPage() {
                 const availability = profile ? normalizeStudyAvailability({ studyDays: override?.study_days ?? profile.study_days, dailyCapacity: profile.daily_theme_capacity, dailyCapacities: override?.daily_capacities ?? profile.daily_capacities }) : null;
                 const unavailable = Boolean(availability && availability.dailyCapacities[String(getISODay(day))] === 0);
                 return (
-                  <div key={date} aria-label={unavailable ? `${format(day, "d 'de' MMMM", { locale: ptBR })}, fora da rotina habitual` : undefined} className={`min-h-32 border-b border-r border-gray-300 p-2 ${!inMonth ? "bg-gray-100" : unavailable ? "bg-gray-50/70" : "bg-white"}`}>
-                    <div className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${isToday ? "bg-brand-blue text-white" : inMonth ? "text-gray-700" : "text-gray-300"}`}>
+                  <div key={date} aria-label={unavailable ? `${format(day, "d 'de' MMMM", { locale: ptBR })}, fora da rotina habitual` : undefined} className={`min-h-32 border-b border-r border-gray-300 p-2 ${!inMonth ? "bg-gray-100" : unavailable ? "bg-gray-50" : "bg-white"}`}>
+                    <div className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${isToday ? "bg-blue-700 text-white" : inMonth ? "text-gray-700" : "text-gray-400"}`}>
                       {format(day, "d")}
                     </div>
                     <div className="space-y-1">
@@ -194,7 +194,7 @@ export default function CalendarPage() {
                           {event.block.title}
                         </button>
                       ))}
-                      {dayEvents.length > 4 && <p className="text-center text-[10px] text-gray-400">+{dayEvents.length - 4}</p>}
+                      {dayEvents.length > 4 && <p className="text-center text-[10px] text-gray-500">+{dayEvents.length - 4}</p>}
                     </div>
                   </div>
                 );
@@ -206,11 +206,11 @@ export default function CalendarPage() {
 
       {actionEvent && (
         <div className="dashboard-modal-overlay" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+          <div className="modal-panel w-full max-w-md p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold text-brand-blue">{actionEvent.label}</p>
-                <h2 className="mt-1 text-lg font-semibold text-gray-950">{actionEvent.block.title}</h2>
+                <p className="page-eyebrow">{actionEvent.label}</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-900">{actionEvent.block.title}</h2>
                 <p className="mt-1 text-sm text-gray-500">{actionEvent.block.major_area} · {actionEvent.block.specialty}</p>
               </div>
               <button type="button" onClick={() => setActionEvent(null)} className="icon-button" aria-label="Fechar"><X size={18} /></button>
@@ -219,22 +219,22 @@ export default function CalendarPage() {
               <button type="button" onClick={() => {
                 setScheduleBlock(actionEvent.block);
                 setActionEvent(null);
-              }} className="flex items-center justify-between rounded-md border border-gray-200 px-4 py-3 text-left hover:bg-gray-50">
+              }} className="flex items-center justify-between rounded-md border border-gray-300 px-4 py-3 text-left transition-colors hover:bg-gray-100">
                 <span>
                   <span className="block text-sm font-semibold text-gray-900">{actionEvent.type === "scheduled" ? "Remarcar dia" : "Escolher um dia"}</span>
                   <span className="mt-0.5 block text-xs text-gray-500">Atualiza a <BrandName /> e o Google Calendar.</span>
                 </span>
-                <CalendarPlus size={17} className="text-brand-blue" />
+                <CalendarPlus size={17} className="text-blue-700" />
               </button>
               <button type="button" onClick={() => {
                 setReviewBlock(actionEvent.block);
                 setActionEvent(null);
-              }} className="flex items-center justify-between rounded-md border border-gray-200 px-4 py-3 text-left hover:bg-gray-50">
+              }} className="flex items-center justify-between rounded-md border border-gray-300 px-4 py-3 text-left transition-colors hover:bg-gray-100">
                 <span>
                   <span className="block text-sm font-semibold text-gray-900">Registrar revisão</span>
                   <span className="mt-0.5 block text-xs text-gray-500">Salva o resultado e abre a próxima janela.</span>
                 </span>
-                <Play size={16} className="text-brand-blue" />
+                <Play size={16} className="text-blue-700" />
               </button>
             </div>
           </div>
