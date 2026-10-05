@@ -272,19 +272,19 @@ function Legend({ type, label }: { type: CalendarEvent["type"]; label: string })
 
 function eventClass(type: CalendarEvent["type"]) {
   return {
-    "first-contact": "cursor-default bg-blue-100 text-blue-800",
-    completed: "cursor-default bg-brand-mint/20 text-brand-ink",
+    "first-contact": "cursor-default bg-blue-50 text-blue-800",
+    completed: "cursor-default bg-emerald-50 text-emerald-700",
     window: "border border-dashed border-gray-300 bg-white text-gray-600 hover:border-gray-500 hover:bg-gray-50",
-    scheduled: "bg-teal-100 text-teal-800 hover:bg-teal-200",
+    scheduled: "bg-blue-700 text-white hover:bg-blue-600",
   }[type];
 }
 
 function legendClass(type: CalendarEvent["type"]) {
   return {
-    "first-contact": "bg-blue-400",
-    completed: "bg-brand-mint",
+    "first-contact": "bg-blue-200",
+    completed: "bg-emerald-600",
     window: "border border-dashed border-gray-400 bg-white",
-    scheduled: "bg-teal-500",
+    scheduled: "bg-blue-700",
   }[type];
 }
 

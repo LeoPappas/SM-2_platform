@@ -161,10 +161,10 @@ export default function PerformancePage() {
               {areaMetrics.map((metric, index) => (
                 <div key={metric.area} className="grid gap-3 px-4 py-4 sm:grid-cols-[minmax(12rem,1fr)_minmax(12rem,2fr)_6rem_7rem] sm:items-center">
                   <div className="flex items-center gap-3">
-                    <span className={`h-3 w-3 rounded-full ${["bg-brand-blue", "bg-brand-sky", "bg-brand-cyan", "bg-brand-teal", "bg-brand-mint"][index]}`} />
+                    <span className={`h-3 w-3 rounded-full ${["bg-area-1", "bg-area-2", "bg-area-3", "bg-area-4", "bg-area-5"][index]}`} />
                     <span className="text-sm font-semibold text-gray-900">{metric.area}</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-gray-100"><div className={`h-full ${["bg-brand-blue", "bg-brand-sky", "bg-brand-cyan", "bg-brand-teal", "bg-brand-mint"][index]}`} style={{ width: `${metric.average ?? 0}%` }} /></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-gray-100"><div className={`h-full ${["bg-area-1", "bg-area-2", "bg-area-3", "bg-area-4", "bg-area-5"][index]}`} style={{ width: `${metric.average ?? 0}%` }} /></div>
                   <span title={metric.average === null ? "Sem amostra" : `${metric.questionCount} questões`} className="text-sm font-semibold tabular-nums text-gray-950">{metric.average === null ? "Sem amostra" : `${metric.average}%`}</span>
                   <span className={`text-xs font-medium ${metric.weak > 0 ? "text-red-600" : "text-gray-400"}`}>{metric.weak} {metric.weak === 1 ? "tema frágil" : "temas frágeis"}</span>
                 </div>

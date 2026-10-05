@@ -230,5 +230,5 @@ function TopicRow({ block, item, completedDate, onSchedule, onReview, draggable 
 
 function InlineEmpty({ children }: { children: React.ReactNode }) { return <div className="flex min-h-32 items-center justify-center px-5 text-center text-sm text-gray-400">{children}</div>; }
 function uniqueItems(items: WeeklyPlanItem[]) { const seen = new Set<string>(); return items.filter(item => { if (seen.has(item.block.id)) return false; seen.add(item.block.id); return true; }); }
-function areaTone(area: QuestionBlock["major_area"]) { return { "Clínica Médica": "bg-brand-blue", Cirurgia: "bg-brand-sky", "Ginecologia e Obstetrícia": "bg-brand-cyan", Pediatria: "bg-brand-teal", Preventiva: "bg-brand-mint", "A classificar": "bg-gray-400" }[area]; }
+function areaTone(area: QuestionBlock["major_area"]) { return { "Clínica Médica": "bg-area-1", Cirurgia: "bg-area-2", "Ginecologia e Obstetrícia": "bg-area-3", Pediatria: "bg-area-4", Preventiva: "bg-area-5", "A classificar": "bg-gray-300" }[area]; }
 function formatDate(value: string) { return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`)); }
