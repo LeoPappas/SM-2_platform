@@ -1,20 +1,17 @@
+@import "../styles/metamed-tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: #f7f9fb;
-  --foreground: #000000;
-  --brand-blue: #3476ce;
-  --brand-sky: #338cd8;
-  --brand-cyan: #34a8d2;
-  --brand-teal: #36b0be;
-  --brand-mint: #36e7a0;
+  color-scheme: light;
+  --background: var(--surface-page);
+  --foreground: var(--text-body);
 }
 
 * {
   box-sizing: border-box;
-  letter-spacing: 0 !important;
 }
 
 html {
@@ -26,33 +23,27 @@ body {
   margin: 0;
   color: var(--foreground);
   background: var(--background);
-  font-family: "Nunito", Arial, Helvetica, sans-serif;
-  font-weight: 400;
+  font: var(--type-body);
   font-variant-numeric: tabular-nums;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
 }
 
-body .font-medium,
-body .font-semibold,
-body .font-bold {
-  font-weight: 400;
-}
-
-body h1,
-body h2,
-body h3,
-body h4,
-body h5,
-body h6,
-body .font-display,
-body .tabular-nums {
-  font-family: "Poppins", Arial, Helvetica, sans-serif;
-  font-weight: 700 !important;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  color: var(--text-strong);
+  letter-spacing: var(--tracking-tight);
 }
 
 body .brand-word {
-  font-family: "Cal Sans", "Poppins", Arial, Helvetica, sans-serif;
-  font-weight: 400 !important;
+  font-family: var(--font-logo);
+  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -60,18 +51,24 @@ input,
 select,
 textarea {
   font: inherit;
+  letter-spacing: inherit;
 }
 
 input,
 select,
 textarea {
-  color: #111827;
-  background-color: #ffffff;
+  color: var(--text-strong);
+  background-color: var(--surface-card);
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #9ca3af;
+  color: var(--text-subtle);
+}
+
+::selection {
+  background: var(--blue-100);
+  color: var(--deep-900);
 }
 
 button:focus-visible,
@@ -79,7 +76,7 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--brand-blue);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -93,43 +90,55 @@ textarea:focus-visible {
   }
 
   .page-eyebrow {
-    @apply text-xs text-blue-700;
+    @apply text-xs font-semibold uppercase tracking-caps text-blue-700;
   }
 
   .page-title {
-    @apply mt-1 text-2xl font-semibold text-gray-950 sm:text-3xl;
+    @apply mt-1 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl;
   }
 
   .page-subtitle {
-    @apply mt-2 max-w-2xl text-sm leading-6 text-gray-600;
+    @apply mt-2 max-w-2xl text-sm leading-6 text-gray-500;
   }
 
   .field-control {
-    @apply h-11 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 shadow-sm transition-colors placeholder:text-gray-400 hover:border-gray-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100;
+    @apply h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 transition-colors placeholder:text-mist-500 hover:border-gray-400 focus:border-blue-700 focus:shadow-focus focus:outline-none disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-mist-500;
   }
 
   .button-primary {
-    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-blue-700 bg-blue-700 px-5 text-sm font-semibold tracking-snug text-white transition-colors hover:border-blue-600 hover:bg-blue-600 active:border-blue-800 active:bg-blue-800 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-mist-500;
   }
 
   .button-secondary {
-    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-5 text-sm font-semibold tracking-snug text-gray-900 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-mist-500;
+  }
+
+  .button-danger {
+    @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md border border-red-600 bg-red-600 px-5 text-sm font-semibold tracking-snug text-white transition-colors hover:border-red-700 hover:bg-red-700 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-200 disabled:text-mist-500;
+  }
+
+  .card {
+    @apply rounded-lg border border-gray-200 bg-white shadow-sm;
+  }
+
+  .modal-panel {
+    @apply rounded-xl bg-white shadow-xl;
   }
 
   .icon-button {
-    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-700 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-mist-500;
   }
 
   .status-badge {
-    @apply inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[10px] font-semibold;
+    @apply inline-flex h-5 shrink-0 items-center rounded px-1.5 text-[11px] font-semibold tracking-[.02em];
   }
 
   .dashboard-modal-overlay {
-    @apply fixed inset-y-0 left-0 right-0 z-50 flex items-center justify-center bg-gray-950/55 p-4 md:left-60;
+    @apply fixed inset-y-0 left-0 right-0 z-[60] flex items-center justify-center bg-gray-950/55 p-4 backdrop-blur-md md:left-60;
   }
 
   .empty-state {
-    @apply flex min-h-48 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-gray-300 bg-white px-6 py-10 text-center text-sm text-gray-500;
+    @apply flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white px-6 py-10 text-center text-sm text-gray-500;
   }
 }
 

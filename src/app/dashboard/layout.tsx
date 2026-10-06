@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
-import { reconcileQuestionBlocksCalendar } from "@/lib/calendar-sync";
+import { reconcileCalendar } from "@/lib/calendar-reconciliation";
 import { clearGoogleProviderToken, persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
@@ -32,14 +32,65 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    let disposed = false;
+    let activeUserId: string | null = null;
+    let lastRecoveryAt = 0;
+    let latestProviderToken: string | null = null;
+    const deferredRuns = new Set<ReturnType<typeof setTimeout>>();
+    const recoverCalendar = (force = false) => {
+      if (disposed || !activeUserId || !navigator.onLine) return;
+      if (!force && Date.now() - lastRecoveryAt < 30_000) return;
+      lastRecoveryAt = Date.now();
+      void reconcileCalendar(activeUserId).catch(() => {
+        // Persisted pending/failed states remain available for the next recovery.
+      });
+    };
+    const onRecoveryEvent = () => recoverCalendar();
+    window.addEventListener("focus", onRecoveryEvent);
+    window.addEventListener("online", onRecoveryEvent);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (disposed) return;
+      if (!session) {
+        activeUserId = null;
+        if (event === "SIGNED_OUT") {
+          clearGoogleProviderToken();
+          router.replace("/");
+        }
+        return;
+      }
+      persistGoogleProviderToken(session);
+      const userChanged = activeUserId !== session.user.id;
+      const tokenChanged = Boolean(session.provider_token && latestProviderToken !== session.provider_token);
+      activeUserId = session.user.id;
+      if (session.provider_token) latestProviderToken = session.provider_token;
+      setChecking(false);
+      if (userChanged || tokenChanged) {
+        // Supabase callbacks are synchronous; query after its auth lock is released.
+        const deferred = setTimeout(() => {
+          deferredRuns.delete(deferred);
+          recoverCalendar(true);
+        }, 0);
+        deferredRuns.add(deferred);
+      }
+    });
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (disposed) return;
       persistGoogleProviderToken(session);
       if (!session) router.replace("/");
       else {
+        activeUserId = session.user.id;
+        latestProviderToken = session.provider_token ?? null;
         setChecking(false);
-        void reconcileQuestionBlocksCalendar(session.user.id);
+        recoverCalendar();
       }
     });
+    return () => {
+      disposed = true;
+      subscription.unsubscribe();
+      window.removeEventListener("focus", onRecoveryEvent);
+      window.removeEventListener("online", onRecoveryEvent);
+      for (const deferred of deferredRuns) clearTimeout(deferred);
+    };
   }, [router]);
 
   const logout = async () => {
@@ -49,17 +100,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   if (checking) {
-    return <div className="flex min-h-screen items-center justify-center bg-gray-950 text-sm text-gray-400">Carregando...</div>;
+    return <div className="flex min-h-screen items-center justify-center bg-navy text-sm text-mist-300">Carregando...</div>;
   }
 
   return (
     <div className="min-h-screen bg-background md:flex">
-      <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-white/10 bg-black md:sticky md:top-0 md:flex">
+      <aside className="hidden h-screen w-60 shrink-0 flex-col border-r border-white/10 bg-navy md:sticky md:top-0 md:flex">
         <Link href="/dashboard" className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
-          <Image src="/metamed-logo.svg" alt="" width={36} height={33} className="h-9 w-9 object-contain" priority />
+          <Image src="/metamed-logo-white.svg" alt="" width={32} height={32} className="h-8 w-8 object-contain" priority />
           <span>
             <BrandName className="block text-base text-white" />
-            <span className="block text-xs text-gray-500">Revisão por temas</span>
+            <span className="block text-xs text-mist-400">Revisão por temas</span>
           </span>
         </Link>
 
@@ -67,21 +118,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {navItems.map(item => <NavigationItem key={item.href} item={item} pathname={pathname} />)}
         </nav>
 
-        <div className="flex items-center gap-1 border-t border-gray-800 p-3">
-          <Link href="/dashboard/configuracoes" title="Configurações" aria-label="Configurações" className={`icon-button shrink-0 ${pathname.startsWith("/dashboard/configuracoes") ? "bg-gray-800 text-white" : "text-gray-400 hover:bg-gray-900 hover:text-white"}`}>
+        <div className="flex items-center gap-1 border-t border-white/10 p-3">
+          <Link href="/dashboard/configuracoes" title="Configurações" aria-label="Configurações" className={`icon-button shrink-0 ${pathname.startsWith("/dashboard/configuracoes") ? "bg-blue-700 text-white" : "text-mist-300 hover:bg-white/[.06] hover:text-white"}`}>
             <Settings2 size={17} />
           </Link>
-          <button type="button" onClick={logout} className="flex flex-1 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-gray-400 hover:bg-gray-900 hover:text-white">
+          <button type="button" onClick={logout} className="flex flex-1 items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-mist-300 transition-colors hover:bg-white/[.06] hover:text-white">
             <LogOut size={17} /> Sair
           </button>
         </div>
       </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-gray-200 bg-white/95 px-4 backdrop-blur md:hidden">
+        <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 md:hidden">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <Image src="/metamed-logo.svg" alt="" width={32} height={29} className="h-8 w-8 object-contain" priority />
-            <BrandName className="text-base text-gray-950" />
+            <Image src="/metamed-logo.svg" alt="" width={28} height={28} className="h-7 w-7 object-contain" priority />
+            <BrandName className="text-base text-gray-900" />
           </Link>
           <div className="flex items-center gap-1">
             <Link href="/dashboard/configuracoes" className="icon-button" aria-label="Configurações"><Settings2 size={17} /></Link>
@@ -95,7 +146,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {navItems.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (
-              <Link key={href} href={href} title={label} aria-label={label} className={`flex h-12 flex-col items-center justify-center gap-1 text-[10px] font-medium ${active ? "text-emerald-700" : "text-gray-400"}`}>
+              <Link key={href} href={href} title={label} aria-label={label} className={`flex h-12 flex-col items-center justify-center gap-1 text-[10px] font-medium ${active ? "text-blue-700" : "text-gray-500"}`}>
                 <Icon size={18} />
                 <span className="max-w-full truncate">{label === "Desempenho" ? "Métricas" : label}</span>
               </Link>
@@ -111,7 +162,7 @@ function NavigationItem({ item, pathname }: { item: (typeof navItems)[number]; p
   const active = isActive(pathname, item.href);
   const Icon = item.icon;
   return (
-    <Link href={item.href} className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium ${active ? "bg-brand-mint text-black" : "text-gray-400 hover:bg-gray-900 hover:text-white"}`}>
+    <Link href={item.href} className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${active ? "bg-blue-700 text-white" : "text-mist-300 hover:bg-white/[.06] hover:text-white"}`}>
       <Icon size={17} /> {item.label}
     </Link>
   );

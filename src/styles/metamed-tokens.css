@@ -1,0 +1,134 @@
+/* MetaMed Design System tokens.
+   Source: claude.ai/design project "MetaMed Design System", tokens/*.css.
+   Copied verbatim (colors, typography, spacing, radius, elevation, motion);
+   fonts are self-hosted via @fontsource in src/app/layout.tsx instead of the CDN
+   imports in the original tokens/fonts.css. Keep tailwind.config.ts in sync. */
+
+/* ---- colors.css ---- */
+:root{
+  /* Deep — #1B2430 BRAND (ink / dark surfaces) */
+  --deep-950:#12181F;--deep-900:#1B2430;--deep-800:#232E3D;--deep-700:#2C394B;--deep-600:#3A4A5F;--deep-500:#4C5E75;
+  /* Blue — #304C72 BRAND (primary action) */
+  --blue-50:#EEF2F8;--blue-100:#DCE4F0;--blue-200:#B9C7DE;--blue-300:#93A6C8;--blue-400:#6B84AC;--blue-500:#4A6491;--blue-600:#3A5680;--blue-700:#304C72;--blue-800:#28405F;--blue-900:#20334C;
+  /* Mist — #D8D6D6 BRAND (warm neutral) */
+  --mist-50:#FAF9F9;--mist-100:#F3F2F2;--mist-200:#E8E7E7;--mist-300:#D8D6D6;--mist-400:#BAB8B7;--mist-500:#94918F;--mist-600:#6E6B69;--mist-700:#4E4B4A;
+  --white:#FFFFFF;
+  /* Semantic hues — intentional addition of the design system (answer states). */
+  --green-50:#EAF3EF;--green-500:#2E8B68;--green-600:#1F7A5C;--green-700:#16604A;
+  --amber-50:#FBF3E6;--amber-500:#D08C1E;--amber-600:#B0730F;--amber-700:#8A5A0B;
+  --red-50:#FAEDEE;--red-500:#C43F49;--red-600:#AC2E38;--red-700:#8A242C;
+
+  /* ---- Semantic aliases ---- */
+  --text-strong:var(--deep-900);
+  --text-body:var(--deep-700);
+  --text-muted:var(--mist-600);
+  --text-subtle:var(--mist-500);
+  --text-on-dark:var(--white);
+  --text-on-dark-muted:var(--mist-300);
+  --text-accent:var(--blue-700);
+  --text-link:var(--blue-700);
+  --text-link-hover:var(--blue-500);
+
+  --surface-page:var(--mist-50);
+  --surface-card:var(--white);
+  --surface-sunken:var(--mist-100);
+  --surface-inset:var(--mist-200);
+  --surface-dark:var(--deep-900);
+  --surface-dark-raised:var(--deep-800);
+  --surface-accent:var(--blue-50);
+  --surface-accent-strong:var(--blue-700);
+
+  --border-subtle:var(--mist-200);
+  --border-default:var(--mist-300);
+  --border-strong:var(--mist-400);
+  --border-accent:var(--blue-700);
+  --border-on-dark:rgba(255,255,255,.14);
+
+  --action-primary:var(--blue-700);
+  --action-primary-hover:var(--blue-600);
+  --action-primary-active:var(--blue-800);
+  --action-secondary:var(--deep-900);
+  --action-secondary-hover:var(--deep-800);
+  --action-ghost-hover:var(--mist-100);
+  --action-disabled:var(--mist-200);
+  --action-disabled-text:var(--mist-500);
+
+  --focus-ring:var(--blue-400);
+
+  --state-correct:var(--green-600);
+  --state-correct-surface:var(--green-50);
+  --state-flagged:var(--amber-600);
+  --state-flagged-surface:var(--amber-50);
+  --state-wrong:var(--red-600);
+  --state-wrong-surface:var(--red-50);
+}
+
+/* ---- typography.css ---- */
+:root{
+  --font-sans:"Poppins","Helvetica Neue",Arial,sans-serif;
+  --font-display:"Poppins","Helvetica Neue",Arial,sans-serif;
+  --font-logo:"Cal Sans","Poppins",sans-serif;
+  --font-mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+
+  --weight-light:300;--weight-regular:400;--weight-medium:500;--weight-semibold:600;--weight-bold:700;
+
+  --text-3xs:11px;--text-2xs:12px;--text-xs:13px;--text-sm:14px;--text-base:16px;--text-lg:18px;
+  --text-xl:20px;--text-2xl:24px;--text-3xl:30px;--text-4xl:38px;--text-5xl:48px;--text-6xl:60px;--text-7xl:76px;
+
+  --leading-tight:1.08;--leading-snug:1.2;--leading-normal:1.5;--leading-relaxed:1.65;
+
+  --tracking-tight:-.02em;--tracking-snug:-.01em;--tracking-normal:0;--tracking-wide:.02em;--tracking-caps:.08em;
+
+  --type-display:var(--weight-bold) var(--text-6xl)/var(--leading-tight) var(--font-display);
+  --type-title-1:var(--weight-bold) var(--text-4xl)/var(--leading-snug) var(--font-display);
+  --type-title-2:var(--weight-bold) var(--text-2xl)/var(--leading-snug) var(--font-display);
+  --type-title-3:var(--weight-semibold) var(--text-xl)/var(--leading-snug) var(--font-sans);
+  --type-body-lg:var(--weight-regular) var(--text-lg)/var(--leading-relaxed) var(--font-sans);
+  --type-body:var(--weight-regular) var(--text-base)/var(--leading-normal) var(--font-sans);
+  --type-body-sm:var(--weight-regular) var(--text-sm)/var(--leading-normal) var(--font-sans);
+  --type-label:var(--weight-medium) var(--text-sm)/1.3 var(--font-sans);
+  --type-caption:var(--weight-regular) var(--text-2xs)/1.4 var(--font-sans);
+  --type-overline:var(--weight-semibold) var(--text-2xs)/1.2 var(--font-sans);
+}
+
+/* ---- spacing.css ---- */
+:root{
+  --space-0:0;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;
+  --space-8:32px;--space-10:40px;--space-12:48px;--space-16:64px;--space-20:80px;--space-24:96px;--space-32:128px;
+  --gutter:24px;
+  --page-pad-sm:20px;--page-pad:40px;--page-pad-lg:64px;
+  --container-sm:640px;--container:960px;--container-lg:1200px;--container-xl:1440px;
+  --control-h-sm:32px;--control-h:40px;--control-h-lg:48px;
+  --tap-min:44px;
+}
+
+/* ---- radius.css ---- */
+:root{
+  --radius-none:0;--radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;--radius-2xl:24px;--radius-pill:999px;
+  --border-width:1px;--border-width-strong:2px;
+}
+
+/* ---- elevation.css ---- */
+:root{
+  --shadow-none:none;
+  --shadow-xs:0 1px 2px rgba(27,36,48,.06);
+  --shadow-sm:0 1px 3px rgba(27,36,48,.08),0 1px 2px rgba(27,36,48,.04);
+  --shadow-md:0 4px 12px rgba(27,36,48,.08),0 1px 3px rgba(27,36,48,.05);
+  --shadow-lg:0 12px 32px rgba(27,36,48,.12),0 2px 6px rgba(27,36,48,.06);
+  --shadow-xl:0 24px 60px rgba(27,36,48,.18);
+  --shadow-inset:inset 0 1px 0 rgba(27,36,48,.04);
+  --ring-focus:0 0 0 3px rgba(48,76,114,.28);
+  --ring-error:0 0 0 3px rgba(172,46,56,.24);
+  --overlay-scrim:rgba(18,24,31,.56);
+  --blur-panel:blur(12px);
+}
+
+/* ---- motion.css ---- */
+:root{
+  --dur-instant:80ms;--dur-fast:140ms;--dur-base:200ms;--dur-slow:320ms;--dur-slower:480ms;
+  --ease-standard:cubic-bezier(.2,0,.2,1);
+  --ease-out:cubic-bezier(0,0,.2,1);
+  --ease-in:cubic-bezier(.4,0,1,1);
+  --transition-control:background-color var(--dur-fast) var(--ease-standard),border-color var(--dur-fast) var(--ease-standard),color var(--dur-fast) var(--ease-standard),box-shadow var(--dur-fast) var(--ease-standard);
+}
+@media (prefers-reduced-motion:reduce){:root{--dur-instant:0ms;--dur-fast:0ms;--dur-base:0ms;--dur-slow:0ms;--dur-slower:0ms}}

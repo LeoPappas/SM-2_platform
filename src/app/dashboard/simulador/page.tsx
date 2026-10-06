@@ -10,8 +10,13 @@ import {
   calculatePriority,
   type EngineConfig,
 } from "@/lib/revision-engine";
+import {
+  DEFAULT_RELEVANCE_EXPERIMENT,
+  calculateRelevanceShadowInterval,
+  type RelevanceExperimentConfig,
+} from "@/lib/relevance-engine";
 
-type ControlTab = "desempenho" | "amostra" | "prioridade";
+type ControlTab = "desempenho" | "amostra" | "prioridade" | "relevancia";
 
 const performanceBands: PerformanceBand[] = ["muito_ruim", "ruim", "bom", "muito_bom"];
 const difficulties: DifficultyRating[] = ["Muito difícil", "Difícil", "Médio", "Fácil", "Muito fácil"];
@@ -19,8 +24,9 @@ const importances: Importance[] = ["alta", "media", "baixa"];
 
 export default function SimulatorPage() {
   const [config, setConfig] = useState<EngineConfig>(() => cloneConfig(DEFAULT_ENGINE_CONFIG));
+  const [relevanceConfig, setRelevanceConfig] = useState<RelevanceExperimentConfig>(() => ({ ...DEFAULT_RELEVANCE_EXPERIMENT }));
   const [tab, setTab] = useState<ControlTab>("desempenho");
-  const scenarios = useMemo(() => runScenarios(config), [config]);
+  const scenarios = useMemo(() => runScenarios(config, relevanceConfig), [config, relevanceConfig]);
 
   const updateRecord = <K extends keyof EngineConfig>(
     section: K,
@@ -44,23 +50,27 @@ export default function SimulatorPage() {
           <h1 className="page-title">Simulador <BrandName /></h1>
           <p className="page-subtitle">Parâmetros experimentais aplicados aos cenários de validação. O motor ativo não é alterado nesta tela.</p>
         </div>
-        <button type="button" onClick={() => setConfig(cloneConfig(DEFAULT_ENGINE_CONFIG))} className="button-secondary"><RotateCcw size={16} /> Restaurar valores</button>
+        <button type="button" onClick={() => {
+          setConfig(cloneConfig(DEFAULT_ENGINE_CONFIG));
+          setRelevanceConfig({ ...DEFAULT_RELEVANCE_EXPERIMENT });
+        }} className="button-secondary"><RotateCcw size={16} /> Restaurar valores</button>
       </header>
 
       <div className="grid gap-6 xl:grid-cols-[22rem_minmax(0,1fr)]">
-        <aside className="h-fit overflow-hidden rounded-md border border-gray-200 bg-white xl:sticky xl:top-6">
+        <aside className="h-fit overflow-hidden card xl:sticky xl:top-6">
           <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-4">
-            <SlidersHorizontal size={18} className="text-emerald-700" />
+            <SlidersHorizontal size={18} className="text-blue-700" />
             <div>
-              <h2 className="text-sm font-semibold text-gray-950">Parâmetros</h2>
+              <h2 className="text-sm font-semibold text-gray-900">Parâmetros</h2>
               <p className="mt-0.5 text-xs text-gray-500">Valores da rodada atual</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 border-b border-gray-200 bg-gray-50 p-1">
+          <div className="grid grid-cols-2 border-b border-gray-200 bg-gray-50 p-1 sm:grid-cols-4 xl:grid-cols-2">
             <TabButton active={tab === "desempenho"} onClick={() => setTab("desempenho")}>Desempenho</TabButton>
             <TabButton active={tab === "amostra"} onClick={() => setTab("amostra")}>Amostra</TabButton>
             <TabButton active={tab === "prioridade"} onClick={() => setTab("prioridade")}>Prioridade</TabButton>
+            <TabButton active={tab === "relevancia"} onClick={() => setTab("relevancia")}>Relevância</TabButton>
           </div>
 
           <div className="max-h-[calc(100vh-12rem)] overflow-y-auto p-4">
@@ -109,15 +119,28 @@ export default function SimulatorPage() {
                 </ControlGroup>
               </div>
             )}
+
+            {tab === "relevancia" && (
+              <div className="space-y-5">
+                <div className="rounded-md bg-blue-50 px-3 py-3 text-xs leading-5 text-blue-900">
+                  Experimento em comparação: estes valores não alteram o motor ativo nem as datas salvas.
+                </div>
+                <ControlGroup title="Multiplicador do intervalo">
+                  <NumberControl label="Nota 10" value={relevanceConfig.minimumFactor} min={0.1} max={relevanceConfig.maximumFactor} step={0.05} onChange={value => setRelevanceConfig(current => ({ ...current, minimumFactor: value }))} />
+                  <NumberControl label="Nota 1" value={relevanceConfig.maximumFactor} min={relevanceConfig.minimumFactor} step={0.05} onChange={value => setRelevanceConfig(current => ({ ...current, maximumFactor: value }))} />
+                </ControlGroup>
+                <p className="text-xs leading-5 text-gray-500">A transformação é linear: nota maior reduz o intervalo. O primeiro contato permanece igual.</p>
+              </div>
+            )}
           </div>
         </aside>
 
         <main className="min-w-0 space-y-6">
-          <section className="overflow-hidden rounded-md border border-gray-200 bg-white">
+          <section className="overflow-hidden card">
             <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-4">
-              <FlaskConical size={18} className="text-teal-700" />
+              <FlaskConical size={18} className="text-blue-700" />
               <div>
-                <h2 className="text-sm font-semibold text-gray-950">Cenários longitudinais</h2>
+                <h2 className="text-sm font-semibold text-gray-900">Cenários longitudinais</h2>
                 <p className="mt-0.5 text-xs text-gray-500">Intervalos calculados em cada contato</p>
               </div>
             </div>
@@ -125,28 +148,53 @@ export default function SimulatorPage() {
               {scenarios.longitudinal.map(scenario => (
                 <div key={scenario.name} className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(12rem,1fr)_minmax(16rem,1.4fr)_8rem] md:items-center">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-950">{scenario.name}</h3>
+                    <h3 className="text-sm font-semibold text-gray-900">{scenario.name}</h3>
                     <p className="mt-1 text-xs text-gray-500">{scenario.description}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {scenario.intervals.map((interval, index) => (
-                      <span key={`${scenario.name}-${index}`} className={`inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold tabular-nums ${interval === config.maximumIntervalDays ? "bg-teal-100 text-teal-800" : interval === config.minimumIntervalDays ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-700"}`}>
+                      <span key={`${scenario.name}-${index}`} className={`inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold tabular-nums ${interval === config.maximumIntervalDays ? "bg-blue-700 text-white" : interval === config.minimumIntervalDays ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-700"}`}>
                         {index === 0 ? "1º" : `${index + 1}º`} · {interval}d
                       </span>
                     ))}
                   </div>
                   <div className="text-right">
                     <span className="text-xs text-gray-500">Último intervalo</span>
-                    <strong className="mt-0.5 block text-xl font-semibold tabular-nums text-gray-950">{scenario.intervals.at(-1)} dias</strong>
+                    <strong className="mt-0.5 block text-xl font-semibold tabular-nums text-gray-900">{scenario.intervals.at(-1)} dias</strong>
                   </div>
                 </div>
               ))}
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-md border border-gray-200 bg-white">
+          <section className="overflow-hidden card border-t-[3px] border-t-blue-700">
             <div className="border-b border-gray-200 px-4 py-4">
-              <h2 className="text-sm font-semibold text-gray-950">Montagem da semana · capacidade 4</h2>
+              <h2 className="text-sm font-semibold text-gray-900">Relevância numérica · comparação em sombra</h2>
+              <p className="mt-1 text-xs leading-5 text-gray-600">Mesmo desempenho, dificuldade e intervalo anterior. O motor ativo usa importância média; a coluna candidata substitui esse fator somente na simulação.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+                <caption className="sr-only">Comparação entre os intervalos do motor ativo e do experimento de relevância numérica.</caption>
+                <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-500">
+                  <tr><th scope="col" className="px-4 py-2.5">Nota</th><th scope="col" className="px-4 py-2.5">Fator</th><th scope="col" className="px-4 py-2.5">Motor ativo · média</th><th scope="col" className="px-4 py-2.5">Candidato</th></tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {scenarios.relevance.map(item => (
+                    <tr key={item.score}>
+                      <th scope="row" className="px-4 py-3 font-semibold text-gray-900">{item.score.toLocaleString("pt-BR")}</th>
+                      <td className="px-4 py-3 tabular-nums text-gray-600">{item.factor.toFixed(3)}×</td>
+                      <td className="px-4 py-3 tabular-nums text-gray-600">{item.activeInterval} dias</td>
+                      <td className="px-4 py-3 font-semibold tabular-nums text-blue-700">{item.shadowInterval} dias</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="overflow-hidden card">
+            <div className="border-b border-gray-200 px-4 py-4">
+              <h2 className="text-sm font-semibold text-gray-900">Montagem da semana · capacidade 4</h2>
               <p className="mt-0.5 text-xs text-gray-500">Prioridade = urgência × fraqueza × importância</p>
             </div>
             <div className="hidden grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem_7rem] border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-500 sm:grid">
@@ -155,14 +203,14 @@ export default function SimulatorPage() {
             <div className="divide-y divide-gray-100">
               {scenarios.weekly.map((item, index) => (
                 <div key={item.name} className="grid gap-2 px-4 py-3.5 text-sm sm:grid-cols-[minmax(10rem,1fr)_7rem_7rem_7rem_7rem] sm:items-center">
-                  <span className="flex items-center gap-2 font-semibold text-gray-950">
-                    <span className={`h-2 w-2 rounded-full ${index < 4 ? "bg-emerald-500" : "bg-amber-500"}`} />
+                  <span className="flex items-center gap-2 font-semibold text-gray-900">
+                    <span className={`h-2 w-2 rounded-full ${index < 4 ? "bg-blue-700" : "bg-amber-500"}`} />
                     {item.name}
                   </span>
                   <span className="tabular-nums text-gray-600">{item.urgency.toFixed(2)}</span>
                   <span className="tabular-nums text-gray-600">{item.weakness.toFixed(1)}</span>
                   <span className="tabular-nums text-gray-600">{item.importance.toFixed(1)}</span>
-                  <span className="font-semibold tabular-nums text-gray-950">{item.priority.toFixed(2)}</span>
+                  <span className="font-semibold tabular-nums text-gray-900">{item.priority.toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -172,14 +220,14 @@ export default function SimulatorPage() {
           </section>
 
           <div className="grid gap-6 md:grid-cols-2">
-            <section className="rounded-md border border-gray-200 bg-white p-5">
+            <section className="card p-5">
               <p className="text-xs font-semibold text-gray-500">Tema cronicamente ruim</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-amber-800">{scenarios.floor.intervalDays} dias</p>
+              <p className="mt-2 text-3xl font-bold tracking-tight tabular-nums text-amber-700">{scenarios.floor.intervalDays} dias</p>
               <p className="mt-2 text-sm leading-6 text-gray-600">O resultado bruto foi {scenarios.floor.rawIntervalDays.toFixed(1)} dias e {scenarios.floor.hitMinimum ? "acionou" : "não acionou"} o piso.</p>
             </section>
-            <section className="rounded-md border border-gray-200 bg-white p-5">
+            <section className="card p-5">
               <p className="text-xs font-semibold text-gray-500">Revisão depois da prova</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-teal-800">{scenarios.afterExam.intervalDays} dias</p>
+              <p className="mt-2 text-3xl font-bold tracking-tight tabular-nums text-blue-700">{scenarios.afterExam.intervalDays} dias</p>
               <p className="mt-2 text-sm leading-6 text-gray-600">Próxima janela em {formatDate(scenarios.afterExam.nextReviewDate)}. Alerta pré-prova: {scenarios.afterExam.fallsAfterExam ? "sim" : "não"}.</p>
             </section>
           </div>
@@ -189,7 +237,7 @@ export default function SimulatorPage() {
   );
 }
 
-function runScenarios(config: EngineConfig) {
+function runScenarios(config: EngineConfig, relevanceConfig: RelevanceExperimentConfig) {
   const scenario1 = sequence(config, [
     { questions: 20, correct: 16, difficulty: "Médio" as DifficultyRating, importance: "alta" as Importance },
     { questions: 20, correct: 18, difficulty: "Médio" as DifficultyRating, importance: "alta" as Importance },
@@ -244,6 +292,34 @@ function runScenarios(config: EngineConfig) {
     examDate: "2026-11-30",
     config,
   });
+  const activeRelevanceBaseline = calculateNextInterval({
+    questionCount: 20,
+    correctCount: 16,
+    perceivedDifficulty: "Médio",
+    importance: "media",
+    previousIntervalDays: 30,
+    isFirstContact: false,
+    config,
+  });
+  const relevance = [1, 3, 5, 5.5, 7, 9, 10].map(score => {
+    const candidate = calculateRelevanceShadowInterval({
+      relevanceScore: score,
+      questionCount: 20,
+      correctCount: 16,
+      perceivedDifficulty: "Médio",
+      legacyImportance: "media",
+      previousIntervalDays: 30,
+      isFirstContact: false,
+      engineConfig: config,
+      relevanceConfig,
+    });
+    return {
+      score,
+      factor: candidate.relevanceFactor,
+      activeInterval: activeRelevanceBaseline.intervalDays,
+      shadowInterval: candidate.intervalDays,
+    };
+  });
 
   return {
     longitudinal: [
@@ -253,6 +329,7 @@ function runScenarios(config: EngineConfig) {
       { name: "Vasculite rara", description: "Fácil · baixa importância · amostra pequena", intervals: scenario4 },
     ],
     weekly,
+    relevance,
     floor,
     afterExam,
   };
@@ -286,13 +363,17 @@ function NumberControl({ label, value, min, max, step, onChange }: { label: stri
   return (
     <label className="flex items-center justify-between gap-3">
       <span className="text-xs text-gray-600">{label}</span>
-      <input type="number" value={value} min={min} max={max} step={step} onChange={event => onChange(Number(event.target.value))} className="h-9 w-20 rounded-md border border-gray-300 px-2 text-right text-xs font-semibold tabular-nums focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
+      <input type="number" value={value} min={min} max={max} step={step} onChange={event => {
+        const next = event.currentTarget.valueAsNumber;
+        if (!Number.isFinite(next)) return;
+        onChange(Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min, next)));
+      }} className="h-9 w-20 rounded-md border border-gray-300 px-2 text-right text-xs font-semibold tabular-nums text-gray-900 transition-colors hover:border-gray-400 focus:border-blue-700 focus:shadow-focus focus:outline-none" />
     </label>
   );
 }
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button type="button" onClick={onClick} className={`rounded px-2 py-2 text-[11px] font-semibold ${active ? "bg-white text-emerald-800 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}>{children}</button>;
+  return <button type="button" onClick={onClick} className={`rounded px-2 py-2 text-[11px] font-semibold transition-colors ${active ? "bg-white text-blue-700 shadow-sm" : "text-gray-500 hover:text-gray-900"}`}>{children}</button>;
 }
 
 function cloneConfig(config: EngineConfig): EngineConfig {
