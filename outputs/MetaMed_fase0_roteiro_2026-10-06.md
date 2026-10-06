@@ -1,117 +1,98 @@
 # MetaMed — Fase 0: publicar o que existe e começar o ensaio
 
-Data: 06/10/2026. Complementa `MetaMed_reuniao_vs_plataforma_2026-10-04.md` (seção 5, Fase 0). Este documento registra o que foi executado, o que foi verificado e o que depende de acessos que a automação não tem (projeto Supabase MetaMed, Vercel, Google Cloud).
+Data: 06/10/2026, atualizado na mesma data após a segunda passada, já com acesso ao projeto Supabase MetaMed e à Vercel. Complementa `MetaMed_reuniao_vs_plataforma_2026-10-04.md` (seção 5, Fase 0) e **substitui a descrição de ambientes daquele documento**, que era de 04/10.
 
 ## 1. Situação dos cinco passos
 
-| # | Passo | Situação | Quem |
-|---|---|---|---|
-| 1 | Enviar os 4 commits de design system para `origin/dev` e conferir o preview | Executado; ver seção 2 | Automação |
-| 2 | Reconciliar o histórico de migrations do Supabase | **Pendente**: exige acesso ao projeto `qwrlokkaxhtogmcgablr` (seção 3) | Leonardo |
-| 3 | PR `dev → main`, publicar, desligar o projeto Vercel duplicado | PR aberto. Merge e Vercel dependem de decisão e acesso (seção 4) | Leonardo |
-| 4 | Validar o Google com conta real e conferir o modo do app OAuth | **Pendente**: exige login real e o Google Cloud (seção 5) | Leonardo |
-| 5 | Ensaio de 3 semanas | Roteiro pronto (seção 6); a execução é de vocês | Leonardo, Gabriel, Pejoy |
+| # | Passo | Situação |
+|---|---|---|
+| 1 | Enviar os 4 commits de design system para `origin/dev` | Executado |
+| 2 | Reconciliar o histórico de migrations do Supabase | **Verificado, sem alteração por decisão.** SQL remoto idêntico ao local nas 11 migrations. O `supabase db push` deste repositório é inviável pelas razões da seção 3 |
+| 3 | PR `dev → main`, publicar, desligar o projeto Vercel duplicado | Executado. PR #3 mesclado (`c3cab9e`); produção publicada. `sm-2-platform` pausado em 06/10; o oficial é `sm-2-platform-c2mn` |
+| 4 | Validar o Google com conta real | **Parcial.** Lado Vercel verificado (seção 5). Falta o teste com login real e as conferências no Google Cloud e no Supabase Auth |
+| 5 | Ensaio de 3 semanas | Roteiro pronto (seção 6). O banco ainda tem 1 tema e 1 revisão: o ensaio não começou |
 
-## 2. Verificações antes de publicar
+## 2. Verificações
 
 | Verificação | Resultado |
 |---|---|
-| Commits locais de design system (4) | Só classes de estilo, tokens, fontes e tamanho de SVG; nenhuma linha de lógica, handler ou acesso a dados |
-| `npm test` | 91 testes em 11 arquivos passaram |
-| `npx tsc --noEmit` e `npm run lint` | Sem erros |
-| `npm run build` | Passou; 9 rotas geradas |
-| Objetos de banco usados pelo frontend da `dev` | 7 tabelas e 5 funções (`prepare_weekly_plan`, `save_weekly_availability`, `reset_weekly_availability`, `complete_block_review`, `replace_course_topics`). Todos existem no remoto; as funções respondem "permissão negada" para a chave anon, o esperado |
-| Dependência de tabelas da relevância v3 | Nenhuma. O frontend só as referencia em `database.types.ts`; a migration v3 **não** precisa ser aplicada para publicar |
+| Commits de design system | Só classes de estilo, tokens, fontes e tamanho de SVG; nenhuma lógica |
+| `npm test`, `tsc`, `lint`, `build` | 91 testes passaram; sem erros; build gerou 9 rotas |
+| Objetos de banco usados pelo frontend | 7 tabelas e 5 funções existem no remoto; nada da relevância v3 é usado |
+| Deploy de produção | Os dois projetos Vercel têm `c3cab9e` em produção, estado READY |
+| Erros de runtime (7 dias) | Nenhum, nos dois projetos |
+| Login em produção (`sm-2-platform-c2mn.vercel.app`) | Renderiza com o novo design |
+| URLs `.vercel.app` de produção | Públicas (HTTP 200). A proteção SSO só vale para URLs de preview e de deploy específico |
 
-Limite da verificação: a sondagem usa a chave pública, sem sessão de aluno. Ela confirma que os objetos existem e estão protegidos, mas não executa as funções. Isso só se prova no fluxo autenticado (seção 5 e ensaio).
+Limite: nada disso cobre o fluxo autenticado de um aluno (login Google, registro de revisão, sincronização). Isso depende do teste da seção 5 e do ensaio.
 
-## 3. Reconciliar o histórico de migrations (passo 2)
+## 3. Histórico de migrations
 
-### Por que importa
+### O que foi verificado
 
-A migration de setembro foi aplicada no remoto em 04/10 como versão `20261004230438`, mas o arquivo local se chama `20260918230725_weekly_availability_and_review_occurrences.sql`. Se alguém rodar `supabase db push` agora:
+Comparei o SQL registrado no remoto (`supabase_migrations.schema_migrations`) com cada arquivo local, ignorando comentários, espaços e `;`. As 11 migrations do MetaMed são **idênticas**. Não há desvio de schema. Só os números de versão diferem:
 
-1. O CLI vê `20260918230725` como não aplicada e tenta executá-la de novo; ela falha em `add column` porque as colunas já existem.
-2. A migration v3 (`20260927180243`) é mais antiga que a versão remota `20261004230438`, e o CLI recusa inserir migrations antes da última aplicada.
+| Arquivo local | Versão registrada no remoto | Mesmo número? |
+|---|---|---|
+| `20260604010000_question_blocks_schema` | `20260605005505` | Não |
+| `20260604011000_question_blocks_advisor_fixes` | `20260605011004` | Não |
+| `20260705000000` a `20260807221210` (8 arquivos) | idêntica ao nome do arquivo | Sim |
+| `20260918230725_weekly_availability_and_review_occurrences` | `20261004230438` | Não |
+| `20260604000000_initial_schema` | não registrada | Só local |
+| `20260927180243_relevance_catalog_v3_foundation` | não registrada | Só local, intencional |
 
-Renomear o arquivo local para `20261004230438` não resolve: a v3 depende da migration de setembro e ficaria ordenada antes dela.
+### Por que o plano original (reparar o histórico e usar `db push`) não serve
 
-### Procedimento (nesta ordem; nada abaixo altera dados de alunos)
+1. **O projeto Supabase é compartilhado.** Além das tabelas do MetaMed, o banco guarda o MetaAssist (usuários, decks do Brainscape), o CRM e o creative_os. O histórico remoto tem duas migrations que não são deste repositório: `20260512234535 create_creative_os_schema` e `20260531233025 create_crm_schema`. Pelo comportamento documentado do CLI (não executei o comando, que exige credenciais do banco), enquanto existirem versões remotas ausentes localmente o `supabase db push` recusa executar. A saída padrão, marcá-las como `reverted`, apagaria o registro de outros produtos.
+2. **O conector grava a versão com a hora da aplicação.** Toda migration aplicada por `apply_migration` ganha um número diferente do nome do arquivo, como aconteceu em 04/10. Reparar uma vez não impede a divergência de voltar na próxima.
+3. **`20260604000000_initial_schema.sql` é uma armadilha.** Nunca foi registrada no remoto e é superada pela `question_blocks_schema`, que apaga `themes` e `study_sessions`. Aplicá-la de novo (por exemplo com `db push --include-all`) recriaria essas tabelas em produção.
 
-Pré-requisito: `npx supabase login` e projeto vinculado (`supabase/.temp/project-ref` já aponta para `qwrlokkaxhtogmcgablr`).
+Verificado e descartado: as migrations redefinem `public.set_updated_at()` num schema compartilhado, mas os 7 triggers que a usam são todos de tabelas do MetaMed e a função é trivial.
 
-**a) Somente leitura: ver o desalinhamento.**
+### Decisão de 06/10: não alterar o histórico remoto
 
-```bash
-npx supabase migration list --linked
-```
+- Continuar aplicando migrations pelo conector, como em 04/10. Nenhuma escrita em `schema_migrations`.
+- **Nunca rodar `supabase db push` nem `supabase migration repair` neste projeto.**
+- A tabela acima é o mapeamento oficial arquivo → versão remota.
+- Antes de aplicar a v3 (Fase 2), repetir esta verificação de equivalência nas migrations pendentes e aplicar primeiro em uma branch do Supabase.
+- Se no futuro preferirem o fluxo por CLI, o caminho é: alinhar as 3 versões divergentes (`update` em `schema_migrations`) e criar arquivos placeholder vazios para as 2 migrations de outros produtos. Isso **não foi executado**.
 
-Anote cada versão que aparece só no remoto e cada uma só no local. Os documentos de 04/10 já registram que há diferenças anteriores a setembro.
+## 4. Publicação e projetos Vercel
 
-**b) Somente leitura: provar que o SQL remoto equivale ao arquivo.** No SQL Editor do Supabase:
+PR #3 (`dev → main`) mesclado. **Reversão:** na Vercel, promover novamente o deploy `92b4760` (`dpl_8qfyca8TRcmjTpVCuDNbkFHvLQqu` em `sm-2-platform`, `dpl_Hp8dUMG1QsQdy5U9j1J4r9aHCx76` em `sm-2-platform-c2mn`). O banco não precisa voltar, porque a migration de setembro é aditiva.
 
-```sql
-select version, name, array_length(statements, 1) as statements
-from supabase_migrations.schema_migrations
-order by version;
+### Projeto duplicado
 
-select statements from supabase_migrations.schema_migrations
-where version = '20261004230438';
-```
+| | `sm-2-platform` | `sm-2-platform-c2mn` |
+|---|---|---|
+| Variáveis do Supabase | Sim | Sim |
+| `GOOGLE_OAUTH_CLIENT_ID` e `_SECRET` | **Ausentes** | Presentes (Production, Preview e Development) |
+| `POST /api/google/refresh-token` com token falso | `500 Google OAuth refresh is not configured` | `400 Bad Request` (o Google aceitou o cliente e rejeitou só o token inventado) |
+| Situação em 06/10 | **Pausado** (responde 503) | Oficial |
 
-Compare o conteúdo de `statements` com o arquivo local (diff). Só prossiga se forem equivalentes. Faça o mesmo para qualquer outro par remoto/local do passo (a).
+Sem as variáveis do Google, quem usava `sm-2-platform` perdia a sincronização do Calendar assim que o token inicial de cerca de 1 hora expirava. É uma causa provável da desconexão vista na reunião, mas não está provado que Leonardo usava esse endereço naquele dia.
 
-**c) Reparar apenas o registro do histórico**, depois de provar a equivalência:
+Para desfazer a pausa: painel da Vercel (projeto `sm-2-platform` → Resume) ou `unpause_project`.
 
-```bash
-npx supabase migration repair --status reverted 20261004230438
-npx supabase migration repair --status applied 20260918230725
-npx supabase migration list --linked
-```
+**Conferir (a automação não consegue ler):** em Supabase → Authentication → URL Configuration, a Site URL e as Redirect URLs devem apontar para `https://sm-2-platform-c2mn.vercel.app` (incluindo `/dashboard/configuracoes`). Se ainda estiverem no domínio pausado, o login Google deixa de funcionar. Os links já enviados ao Gabriel e ao Pejoy também precisam usar o domínio c2mn.
 
-`repair` só edita a tabela de histórico; não executa SQL. Depois, a lista deve mostrar `20260918230725` aplicada nos dois lados.
+### Segredo legível na Vercel
 
-**d) Conferir o efeito esperado.**
+A Vercel marca `GOOGLE_OAUTH_CLIENT_SECRET` com o alerta `readable-secret`: a variável está salva como legível por quem tem acesso ao projeto. Recomenda-se recriá-la como **Sensitive** no painel (Settings → Environment Variables). Não foi alterado.
 
-```bash
-npx supabase db push --linked --dry-run
-```
+## 5. Google Calendar
 
-Deve listar **somente** `20260927180243_relevance_catalog_v3_foundation.sql` (e outras migrations locais realmente pendentes). Se listar `20260918230725`, o passo (c) não pegou.
+### Já verificado
 
-**Não aplique a v3 nesta fase.** Ela pertence à Fase 2 e só deve entrar depois de verificada em uma branch do Supabase.
+- Projeto oficial tem ID e segredo do Google configurados, e o Google os aceita.
 
-## 4. PR e publicação (passo 3)
+### Falta conferir (5 minutos)
 
-- PR `dev → main` com todos os commits desde `92b4760` (planejamento semanal, relevância v3 em staging, correção do início, design system e documentos).
-- Publicar é fazer o merge: a Vercel publica a `main`. O código novo substitui a versão de 08/08 e passa a usar as funções de setembro, que já estão no banco.
-- **Reversão:** no painel da Vercel, promover novamente o deploy de produção anterior (`92b4760`), ou reverter o merge. O banco não precisa voltar atrás, porque a migration de setembro é aditiva.
-
-### Projeto Vercel duplicado
-
-Os mesmos commits geram deploys em dois projetos do time `leopappas-projects`:
-
-| Projeto | Deploy de produção atual |
-|---|---|
-| `sm-2-platform` | `sm-2-platform-cixr3yb9p-leopappas-projects.vercel.app` |
-| `sm-2-platform-c2mn` | `sm-2-platform-c2mn-qcgjwyqx6-leopappas-projects.vercel.app` |
-
-A automação não enxerga qual deles tem o domínio de produção e as variáveis de ambiente. No painel da Vercel:
-
-1. Em cada projeto, confira **Settings → Domains** e **Settings → Environment Variables** (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, em Production **e** Preview).
-2. Mantenha o que tem o domínio usado pelos alunos.
-3. No outro, use **Settings → Git → Disconnect** em vez de excluir: é reversível e interrompe os deploys duplicados.
-4. No Supabase (**Authentication → URL Configuration**), confirme que o domínio mantido está em Site URL e Redirect URLs, incluindo `/dashboard/configuracoes` e um padrão para os previews.
-
-## 5. Validar o Google com conta real (passo 4)
-
-### Conferências de configuração (5 minutos)
-
-1. **Google Cloud → APIs e serviços → Tela de consentimento OAuth.** Se o status de publicação for **Testing**, os refresh tokens expiram em 7 dias para escopos sensíveis como `calendar.events`. É uma causa provável da desconexão vista na reunião. Alternativas: publicar o app (o Google exige verificação para escopos sensíveis, que leva dias a semanas; até lá, aparece o aviso de app não verificado) ou aceitar a reconexão semanal durante o ensaio e registrar isso.
-2. **Mesmo cliente OAuth nos dois lados.** O ID e o segredo em **Supabase → Authentication → Providers → Google** precisam ser os mesmos de `GOOGLE_OAUTH_CLIENT_ID` e `GOOGLE_OAUTH_CLIENT_SECRET` na Vercel. A rota `/api/google/refresh-token` renova o token com as variáveis da Vercel; se forem de outro cliente, a renovação falha com `invalid_client` ou `unauthorized_client`.
+1. **Google Cloud → APIs e serviços → Tela de consentimento OAuth.** Se o status de publicação for **Testing**, o refresh token expira em 7 dias para escopos sensíveis como `calendar.events`. Alternativas: publicar o app (o Google exige verificação para escopos sensíveis, que leva de dias a semanas; até lá aparece o aviso de app não verificado) ou aceitar a reconexão semanal durante o ensaio e registrar isso.
+2. **Mesmo cliente OAuth nos dois lados.** O resultado `400` acima prova que o cliente da Vercel é válido no Google, mas não que seja o mesmo configurado em **Supabase → Authentication → Providers → Google**. Se forem diferentes, os tokens emitidos no login não podem ser renovados pela rota.
 3. **URI de redirecionamento** `https://qwrlokkaxhtogmcgablr.supabase.co/auth/v1/callback` cadastrada no cliente OAuth.
 
-### Teste com conta real (no deploy publicado, não em `localhost`)
+### Teste com conta real (em `sm-2-platform-c2mn.vercel.app`)
 
 | Passo | Esperado |
 |---|---|
@@ -120,12 +101,12 @@ A automação não enxerga qual deles tem o domínio de produção e as variáve
 | Registrar um tema e uma revisão | Um evento por tema no Google Calendar, com a data correta |
 | Remarcar o dia do tema | O mesmo evento muda de data; não cria outro |
 | Fechar a aba, esperar mais de 1 hora, reabrir e remarcar | Atualiza sem pedir novo login (prova a renovação do token) |
-| Entrar em um segundo dispositivo e remarcar | Lembre que o refresh token fica só no navegador de cada aparelho; anote o que acontece |
+| Entrar em um segundo dispositivo e remarcar | O refresh token fica só no navegador de cada aparelho; anotar o que acontece |
 | Revogar o acesso em myaccount.google.com/permissions e remarcar | Estudo salvo; aviso de Calendar pendente; botão de reconectar visível; ao reconectar, a pendência é recuperada |
 
 Qualquer falha vira issue com o rótulo `calendar`.
 
-## 6. Roteiro do ensaio (passo 5)
+## 6. Roteiro do ensaio
 
 ### Perfis sugeridos
 
@@ -135,7 +116,7 @@ Qualquer falha vira issue com o rótulo `calendar`.
 | B. Internato em rodízio | Muda a cada semana; semana começa no domingo | Ajuste semanal, capacidade zero, próxima semana |
 | C. Plantão irregular | Dias e capacidades diferentes por dia | Capacidade por dia, dias fora da rotina, movimentação |
 
-Cada pessoa cadastra de 10 a 15 temas com resultados variados (alguns com menos de 20 questões).
+Cada pessoa cadastra de 10 a 15 temas com resultados variados (alguns com menos de 20 questões). Todos devem usar `https://sm-2-platform-c2mn.vercel.app`.
 
 ### Como testar atraso sem esperar semanas
 
