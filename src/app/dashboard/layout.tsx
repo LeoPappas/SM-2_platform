@@ -53,6 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   const logout = async () => {
+    clearLegacyGoogleTokens();
     await supabase.auth.signOut();
     router.replace("/");
   };

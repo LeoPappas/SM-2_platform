@@ -140,6 +140,12 @@ npx tsc --noEmit
 npm run build
 ```
 
+As verificacoes de banco rodam em PGlite isolado, sem credenciais. Instale `@electric-sql/pglite` fora do projeto e aponte `PGLITE_MODULE` para o seu `dist/index.js`:
+
+```bash
+PGLITE_MODULE=/caminho/node_modules/@electric-sql/pglite/dist/index.js npm run verify:db
+```
+
 ## Agenda e login com Google
 
 O motor calcula a proxima sugestao e o planejador escolhe um dia automatico quando ha capacidade. O aluno pode remarcar esse dia manualmente; o historico de revisoes e a agenda ficam na MetaMed.

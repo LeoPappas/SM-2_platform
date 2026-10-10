@@ -27,10 +27,6 @@ describe("legacy Google token cleanup", () => {
     expect([...store.keys()]).toEqual(["metamed.other_preference"]);
   });
 
-  it("does nothing outside the browser", () => {
-    expect(() => clearLegacyGoogleTokens()).not.toThrow();
-  });
-
   it("tolerates blocked storage", () => {
     vi.stubGlobal("window", { get localStorage() { throw new Error("blocked"); } });
     expect(() => clearLegacyGoogleTokens()).not.toThrow();

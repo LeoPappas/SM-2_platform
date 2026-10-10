@@ -54,7 +54,7 @@ Detalhes e critérios de aceite em [`tasks/todo.md`](todo.md).
 ### Fase B — Infraestrutura (depois do deploy da Fase A em produção)
 - [ ] T7: Desligar Calendar no Google Cloud e na Vercel; apagar o evento que sobrou
 
-### Fase C — Contract do schema (deploy separado, depois da relevância v3 aplicada no remoto)
+### Fase C — Contract do schema (deploy separado, depois do deploy do código da Fase A; não depende da v3)
 - [x] T8: Migration que remove colunas, triggers, índices e o trecho da RPC
 
 ### Checkpoint final
@@ -68,11 +68,11 @@ Detalhes e critérios de aceite em [`tasks/todo.md`](todo.md).
 |---|---|---|
 | Perder uma guarda de concorrência ao desmontar `calendar-sync.ts` | Alto: remarcação antiga sobrescreve a nova | T1 move as guardas sem mudar nada e leva junto os testes de concorrência |
 | Refresh token antigo esquecido no `localStorage` | Médio | Limpeza única na T4; revogar o acesso em myaccount.google.com/permissions (T7) |
-| A migration de contract conflita com a `complete_block_review` da v3, que ainda não está no remoto | Médio | Fase C só depois da v3; a migration redefine a versão v3 e roda antes numa branch |
+| A migration de contract conflita com a `complete_block_review` da v3, que ainda não está no remoto | Médio | Resolvido: a migration fica antes da v3 na ordem, recria a função só se a v3 não estiver aplicada e aborta se sobrar função dependente. A v3 e o gerador foram corrigidos. Cobertura em `scripts/verify-drop-calendar-sync.mjs` |
 | Supabase Auth ou Google Cloud ainda pedem `calendar.events` por configuração | Baixo | O escopo vem do código (`scopes:`); T7 confere a tela de consentimento |
 | Arrependimento: o Calendar volta a ser pedido | Baixo | Feed `.ics` por URL secreta: somente leitura, sem escopo sensível, menor que a Fase 6 |
 
 ## Perguntas em aberto
 
 1. Manter o botão "Entrar com Google" (só escopos básicos) ou deixar apenas o link mágico por e-mail? Recomendação: manter, porque não exige verificação do Google.
-2. A Fase C pode esperar a v3 (Fase 2)? As colunas paradas não custam nada; a recomendação é esperar.
+2. ~~A Fase C pode esperar a v3?~~ Decidido: não precisa esperar. A migration está pronta, mas só deve ser aplicada depois do deploy do código da Fase A.

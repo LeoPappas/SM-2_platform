@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BrandName } from "@/components/brand-name";
 import { requestEmailLogin } from "@/lib/email-login";
+import { clearLegacyGoogleTokens } from "@/lib/legacy-google-token-cleanup";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
@@ -15,6 +16,7 @@ export default function LoginPage() {
   const [emailMessage, setEmailMessage] = useState<{ error: boolean; text: string } | null>(null);
 
   useEffect(() => {
+    clearLegacyGoogleTokens();
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) router.push("/dashboard");
       else setLoading(false);

@@ -4,6 +4,17 @@
 -- the function below, adding back its Calendar clause.
 set local lock_timeout = '5s';
 
+do $guard$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'block_reviews' and column_name = 'relevance_factor'
+  ) then
+    raise exception 'Relevance v3 is applied; restore complete_block_review from the v3 migration with its Calendar clause instead of running this rollback.';
+  end if;
+end
+$guard$;
+
 alter table public.student_profiles
   add column if not exists calendar_sync_enabled boolean not null default false;
 

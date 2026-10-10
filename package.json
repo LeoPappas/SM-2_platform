@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:db": "node scripts/verify-weekly-planning.mjs && node scripts/verify-relevance-catalog.mjs && node scripts/verify-drop-calendar-sync.mjs"
   },
   "dependencies": {
     "@fontsource/cal-sans": "^5.3.0",

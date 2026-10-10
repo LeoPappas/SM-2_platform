@@ -279,7 +279,7 @@ export async function rebalanceAutomaticReviewSlots({
     block: blocks!.find(block => block.id === update.id)!, userId,
     date: update.planned_review_date, source: update.planning_source,
   })));
-  return { updated: results.length };
+  return { updated: results.filter(result => result.block).length };
 }
 
 export async function setPreExamReviewRequest({

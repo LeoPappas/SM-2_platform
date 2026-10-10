@@ -129,7 +129,7 @@ export function ScheduleReviewModal({
 
           <div className="rounded-md border border-gray-200 bg-gray-50 px-3.5 py-3 text-sm leading-5 text-gray-600">
             Janela calculada pelo motor: <span className="font-semibold text-gray-900">{formatDate(block.next_review_date)}</span>.
-            {" "}O agendamento ficará apenas na <BrandName />.
+            {" "}O dia escolhido atualiza o seu plano na <BrandName />.
           </div>
 
           {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>}

@@ -7,15 +7,15 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("./supabase", () => ({ supabase: { from: api.from, rpc: api.rpc } }));
 
-import { completeBlockReview, scheduleBlockReview } from "./revision-actions";
-import { deleteQuestionBlock, persistAutomaticReviewSchedule } from "./question-block-writes";
+import { completeBlockReview, rebalanceAutomaticReviewSlots, scheduleBlockReview, setPreExamReviewRequest, unscheduleBlockReview } from "./revision-actions";
+import { deleteQuestionBlock, persistAutomaticReviewSchedule, updateQuestionBlock } from "./question-block-writes";
 
 type CompletionArgs = Database["public"]["Functions"]["complete_block_review"]["Args"];
 type StoredRow = Record<string, unknown>;
 let blocks: QuestionBlock[];
 let profile: StudentProfile;
 let savedReviews: BlockReview[];
-let readError: string | null;
+let writeError: boolean;
 let mutationNumber: number;
 
 /** Equality predicates execute against current storage. Reads are snapshots, so a result
@@ -24,15 +24,15 @@ let mutationNumber: number;
 function query(table: string) {
   const predicates = new Map<string, unknown>();
   let mutation: Partial<QuestionBlock> | null = null;
-  let automaticOnly = false;
+  let orFilter: string | null = null;
   let deleting = false;
   const execute = (single: boolean) => {
-    if (!mutation && readError === table) return { data: null, error: { message: "Read failed" } };
+    if ((mutation || deleting) && writeError) return { data: null, error: { message: "Write failed" } };
     const source: StoredRow[] = table === "student_profiles" ? [profile as unknown as StoredRow]
       : table === "question_blocks" ? blocks as unknown as StoredRow[]
         : table === "block_reviews" ? savedReviews as unknown as StoredRow[] : [];
     const matches = source.filter(row => [...predicates].every(([key,value]) => row[key] === value)
-      && (!automaticOnly || row.planning_source === null || row.planning_source === "automatic"));
+      && (orFilter === null || matchesOr(row, orFilter)));
     if (mutation) {
       for (const row of matches) Object.assign(row, mutation, { updated_at: `version-${++mutationNumber}` });
     }
@@ -45,7 +45,9 @@ function query(table: string) {
     update: (patch: Partial<QuestionBlock>) => { mutation = patch; return fluent; },
     delete: () => { deleting = true; return fluent; },
     eq: (key: string,value: unknown) => { predicates.set(key,value); return fluent; },
-    or: () => { automaticOnly = true; return fluent; },
+    gte: () => fluent,
+    lte: () => fluent,
+    or: (expression: string) => { orFilter = expression; return fluent; },
     single: () => Promise.resolve(execute(true)),
     maybeSingle: () => Promise.resolve(execute(true)),
     then: <TResult1 = ReturnType<typeof execute>, TResult2 = never>(
@@ -54,6 +56,14 @@ function query(table: string) {
     ) => Promise.resolve(execute(false)).then(fulfilled,rejected),
   };
   return fluent;
+}
+
+/** Evaluates PostgREST `column.is.null,column.eq.value` so a changed filter changes behavior. */
+function matchesOr(row: StoredRow, expression: string) {
+  return expression.split(",").some(clause => {
+    const [column, operator, value] = clause.split(".");
+    return operator === "is" && value === "null" ? row[column] === null : operator === "eq" && row[column] === value;
+  });
 }
 
 function blockFixture(): QuestionBlock {
@@ -99,7 +109,7 @@ beforeEach(() => {
   profile = { user_id: "student-1", study_days: [1,2,3,4,5,6,7], daily_theme_capacity: 1,
     timezone: "America/Sao_Paulo", week_starts_on: 1 } as StudentProfile;
   savedReviews = [];
-  readError = null;
+  writeError = false;
   mutationNumber = 0;
   api.from.mockImplementation(query);
   api.rpc.mockImplementation((_name: string,args: CompletionArgs) => Promise.resolve(commit(args)));
@@ -125,7 +135,6 @@ describe("review transaction", () => {
     expect(result.calculation.nextReviewDate).toBe(original.new_next_review_date);
     expect(result.calculation.intervalDays).toBe(original.new_interval_days);
     expect(result.calculation.accuracy).toBe(original.accuracy_percentage);
-    expect(result).not.toHaveProperty("calendarError");
   });
 
   it("leaves numeric relevance snapshots for the database activation policy to derive", async () => {
@@ -181,5 +190,86 @@ describe("guarded block writes", () => {
     expect(blocks).toHaveLength(1);
     await deleteQuestionBlock({ block: blocks[0], userId: "student-1" });
     expect(blocks).toHaveLength(0);
+  });
+
+  it("does not let an automatic plan computed for an older revision replace the newer schedule", async () => {
+    const stale = structuredClone(blocks[0]);
+    Object.assign(blocks[0], { repetitions: 1, planned_review_date: "2026-10-02" });
+    const result = await persistAutomaticReviewSchedule({ block: stale, userId: "student-1", date: "2026-09-25", source: "automatic" });
+    expect(result.block).toBeNull();
+    expect(blocks[0].planned_review_date).toBe("2026-10-02");
+  });
+
+  it("replaces a schedule that has no source yet", async () => {
+    blocks[0].planning_source = null;
+    const result = await persistAutomaticReviewSchedule({ block: structuredClone(blocks[0]), userId: "student-1", date: "2026-09-25", source: "automatic" });
+    expect(result.block?.planned_review_date).toBe("2026-09-25");
+  });
+
+  it("never updates a block that belongs to another student", async () => {
+    await expect(updateQuestionBlock({ blockId: "block-1", userId: "another-student", changes: { title: "Hijack" } }))
+      .rejects.toThrow("outra sessão");
+    expect(blocks[0].title).toBe("Cardiologia");
+  });
+
+  it("reports storage failures instead of pretending the write happened", async () => {
+    writeError = true;
+    await expect(updateQuestionBlock({ blockId: "block-1", userId: "student-1", changes: { title: "x" } }))
+      .rejects.toThrow("Não foi possível atualizar o tema.");
+    await expect(persistAutomaticReviewSchedule({ block: blocks[0], userId: "student-1", date: "2026-09-25", source: "automatic" }))
+      .rejects.toThrow("confirmar todas as datas");
+    await expect(deleteQuestionBlock({ block: blocks[0], userId: "student-1" }))
+      .rejects.toThrow("Não foi possível excluir o tema.");
+    expect(blocks).toHaveLength(1);
+  });
+});
+
+describe("scheduling actions", () => {
+  it("stores a manual choice with the chosen date", async () => {
+    await scheduleBlockReview({ block: structuredClone(blocks[0]), userId: "student-1", date: "2026-09-24" });
+    expect(blocks[0]).toMatchObject({ planned_review_date: "2026-09-24", planning_source: "manual" });
+  });
+
+  it("returns to the automatic suggestion from the nearest free slot", async () => {
+    Object.assign(blocks[0], { planning_source: "manual", planned_review_date: "2026-10-30" });
+    await unscheduleBlockReview({ block: structuredClone(blocks[0]), userId: "student-1" });
+    expect(blocks[0]).toMatchObject({ planned_review_date: "2026-09-18", planning_source: "automatic" });
+  });
+
+  it("rejects an unschedule made from an older revision", async () => {
+    const stale = structuredClone(blocks[0]);
+    Object.assign(blocks[0], { repetitions: 1, planning_source: "manual", planned_review_date: "2026-10-30" });
+    await expect(unscheduleBlockReview({ block: stale, userId: "student-1" })).rejects.toThrow("outra sessão");
+    expect(blocks[0]).toMatchObject({ planned_review_date: "2026-10-30", planning_source: "manual" });
+  });
+
+  it("persists the pre-exam decision in both directions", async () => {
+    await setPreExamReviewRequest({ blockId: "block-1", userId: "student-1", requested: true });
+    expect(blocks[0].pre_exam_review_requested).toBe(true);
+    await setPreExamReviewRequest({ blockId: "block-1", userId: "student-1", requested: false });
+    expect(blocks[0].pre_exam_review_requested).toBe(false);
+  });
+
+  it("counts only the schedules that were actually rewritten when rebalancing", async () => {
+    blocks[0].planned_review_date = null;
+    let raced = false;
+    api.from.mockImplementation((table: string) => {
+      const fluent = query(table);
+      const update = fluent.update;
+      fluent.update = (patch: Partial<QuestionBlock>) => {
+        // The student moves the block by hand after the plan was computed but before it is saved.
+        if (table === "question_blocks" && !raced) {
+          raced = true;
+          Object.assign(blocks[0], { planning_source: "manual", planned_review_date: "2026-10-30" });
+        }
+        return update(patch);
+      };
+      return fluent;
+    });
+    const result = await rebalanceAutomaticReviewSlots({
+      userId: "student-1", studyDays: [1, 2, 3, 4, 5, 6, 7], dailyCapacity: 1, weekStartsOn: 1, timezone: "America/Sao_Paulo",
+    });
+    expect(blocks[0]).toMatchObject({ planned_review_date: "2026-10-30", planning_source: "manual" });
+    expect(result.updated).toBe(0);
   });
 });

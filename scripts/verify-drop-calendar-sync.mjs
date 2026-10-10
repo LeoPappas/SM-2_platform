@@ -20,6 +20,7 @@ const migrations = (await readdir(migrationDir)).filter(name => name.endsWith(".
 const dropMigration = migrations.find(name => name.includes("drop_google_calendar_sync"));
 if (!dropMigration) throw new Error("Drop migration for the Google Calendar columns not found.");
 const weekly = migrations.find(name => name.includes("weekly_availability_and_review_occurrences"));
+const v3 = migrations.find(name => name.includes("relevance_catalog_v3_foundation"));
 const rollback = await readFile(resolve(root, "supabase/rollbacks", dropMigration.replace(/\.sql$/, ".down.sql")), "utf8");
 const read = name => readFile(resolve(migrationDir, name), "utf8");
 
@@ -49,6 +50,10 @@ const calendarObjects = db => db.query(`
   union all select 'function', p.oid::regprocedure::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='public' and p.prokind='f' and pg_get_functiondef(p.oid) ilike '%calendar\\_%'
   order by 1,2`).then(result => result.rows.map(row => `${row.kind}:${row.name}`));
+const studyRows = async db => (await db.query(`
+  select (select jsonb_agg(to_jsonb(b) - array['calendar_event_id','calendar_sync_enabled','calendar_sync_status','calendar_last_error',
+      'calendar_last_synced_at','calendar_sync_fingerprint'] order by b.id) from public.question_blocks b) as blocks,
+    (select jsonb_agg(to_jsonb(p) - 'calendar_sync_enabled' order by p.user_id) from public.student_profiles p) as profiles`)).rows[0];
 const insertBlock = (db, id, userId) => db.query(`
   insert into public.question_blocks(id,user_id,title,area_name,question_count,correct_count,accuracy_percentage,perceived_difficulty,
     study_date,next_review_date,planned_review_date,planning_source,interval_days,repetitions)
@@ -64,11 +69,17 @@ const insertBlock = (db, id, userId) => db.query(`
     await insertBlock(db, legacy, owner);
     await db.query(`update public.question_blocks set calendar_event_id='event-1',calendar_sync_status='failed',
       calendar_last_error='expired' where id=$1`, [legacy]);
-    check((await calendarObjects(db)).length > 10, true, "fixture starts with the Calendar schema in place");
+    const inventory = await calendarObjects(db);
+    check(inventory.length > 10, true, "fixture starts with the Calendar schema in place");
+    const rowsBefore = await studyRows(db);
+    const aclBefore = (await db.query("select proacl::text acl from pg_proc where proname='complete_block_review'")).rows;
 
     await db.exec(await read(dropMigration));
     check(await calendarObjects(db), [], "no Calendar column, trigger, index, constraint or function remains");
-    check((await db.query("select title from public.question_blocks where id=$1", [legacy])).rows, [{ title: "Fixture" }], "existing study rows are preserved");
+    check(await studyRows(db), rowsBefore, "every non-Calendar column of existing study rows is preserved");
+    check((await db.query("select proacl::text acl from pg_proc where proname='complete_block_review'")).rows, aclBefore, "complete_block_review keeps its grants");
+    await db.exec(await read(dropMigration));
+    check(await calendarObjects(db), [], "the drop migration is idempotent");
 
     await db.query("select set_config('request.jwt.claim.sub',$1,false)", [owner]);
     await db.exec("set role authenticated");
@@ -87,13 +98,17 @@ const insertBlock = (db, id, userId) => db.query(`
     await insertBlock(db, added, owner);
     check(Number((await db.query("select count(*) c from public.question_blocks where user_id=$1", [owner])).rows[0].c), 2, "new topics can be created without the inherit trigger");
     await db.query("update public.student_profiles set week_starts_on=1 where user_id=$1", [owner]);
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [other]);
+    await assert.rejects(db.query("select public.complete_block_review($1,gen_random_uuid(),$2,$3)", [legacy, review, changes]), /Block not found/);
+    checks += 1;
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)", [owner]);
     await db.exec("reset role; set role anon");
     await assert.rejects(db.query("select public.complete_block_review($1,$2,$3,$4)", [legacy, operation, review, changes]), /permission denied/);
     checks += 1;
     await db.exec("reset role");
 
     await db.exec(rollback);
-    check((await calendarObjects(db)).length > 10, true, "rollback restores the Calendar schema");
+    check(await calendarObjects(db), inventory, "rollback restores exactly the original Calendar objects");
     check((await db.query("select calendar_sync_enabled from public.student_profiles where user_id=$1", [owner])).rows, [{ calendar_sync_enabled: false }], "rollback restores the profile preference column");
     await db.query("update public.question_blocks set calendar_sync_enabled=true where id=$1", [added]);
     await db.query("select set_config('request.jwt.claim.sub',$1,false)", [owner]);
@@ -103,6 +118,9 @@ const insertBlock = (db, id, userId) => db.query(`
     await db.exec("reset role");
     await db.exec(await read(dropMigration));
     check(await calendarObjects(db), [], "the drop migration can run again after a rollback");
+    await db.exec(await read(v3));
+    await assert.rejects(db.exec(rollback), /Relevance v3 is applied/);
+    checks += 1;
   } finally {
     await db.close();
   }
@@ -114,6 +132,36 @@ const insertBlock = (db, id, userId) => db.query(`
   try {
     for (const migration of migrations) await db.exec(await read(migration));
     check(await calendarObjects(db), [], "the full migration history leaves no Calendar object behind");
+  } finally {
+    await db.close();
+  }
+}
+
+// Chain C: v3 applied first, then the drop. The function must keep the relevance snapshots.
+{
+  const db = await freshDatabase();
+  try {
+    for (const migration of migrations.filter(name => name <= weekly)) await db.exec(await read(migration));
+    await db.exec(await read(v3));
+    await db.exec(await read(dropMigration));
+    const definition = (await db.query("select pg_get_functiondef(p.oid) def from pg_proc p where proname='complete_block_review'")).rows[0].def;
+    check(definition.includes("relevance_shadow_interval_days"), true, "applying the drop after v3 keeps the relevance snapshot writes");
+    check(/calendar_/i.test(definition), false, "the v3 function has no Calendar reference");
+    check(await calendarObjects(db), [], "v3 followed by the drop leaves no Calendar object");
+  } finally {
+    await db.close();
+  }
+}
+
+// Chain D: a function that still depends on a Calendar column must abort the whole migration.
+{
+  const db = await freshDatabase();
+  try {
+    for (const migration of migrations.filter(name => name <= weekly)) await db.exec(await read(migration));
+    await db.exec("create function public.zz_leftover() returns void language plpgsql as $$ begin perform calendar_sync_status from public.question_blocks; end $$;");
+    await assert.rejects(db.exec(await read(dropMigration)), /Functions still reference Calendar columns: .*zz_leftover/);
+    checks += 1;
+    check((await calendarObjects(db)).some(object => object === "column:question_blocks.calendar_sync_status"), true, "a failed migration leaves the schema untouched");
   } finally {
     await db.close();
   }

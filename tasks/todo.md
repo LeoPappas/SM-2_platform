@@ -87,15 +87,16 @@ Plano: [`tasks/plan.md`](plan.md). Verificação padrão de cada tarefa: `npm te
 
 **Descrição:** Uma migration nova que:
 1. remove os triggers `apply_profile_calendar_sync_to_blocks` e `inherit_profile_calendar_sync_on_insert` e as funções com o mesmo nome;
-2. redefine `complete_block_review` (a versão da v3) sem a linha `calendar_sync_status = …, calendar_last_error = null`;
+2. recria `complete_block_review` (versão semanal, a que está no remoto) sem a linha `calendar_sync_status = …, calendar_last_error = null`, só se a v3 ainda não estiver aplicada, e aborta a migration se qualquer função ainda citar `calendar_*`;
 3. remove os índices `question_blocks_user_calendar_sync_status_idx` e `question_blocks_calendar_reconciliation_idx` e a constraint `question_blocks_calendar_sync_status_check`;
 4. remove as colunas `question_blocks.calendar_event_id/_sync_enabled/_sync_status/_last_error/_last_synced_at/_sync_fingerprint` e `student_profiles.calendar_sync_enabled`.
 
 O caminho de volta recria as colunas com os defaults de antes. Perder um `calendar_event_id` é aceitável.
 
 **Critérios de aceite:**
-- [ ] Aplicada e testada numa branch do Supabase: registrar revisão pela RPC, criar tema e salvar preferências
-- [ ] `scripts/verify-weekly-planning.mjs` passa sem referência ao Calendar
+- [x] Testada em PGlite (`npm run verify:db`): cadeia do remoto, v3 antes e depois da remoção, rollback exato, idempotência e aborto atômico
+- [ ] **Pré-condição:** código da Fase A em produção antes de aplicar
+- [ ] Aplicada no Supabase de produção (ou numa branch antes): registrar revisão pela RPC, criar tema e salvar preferências
 - [ ] As advisories do Supabase não mostram regressão
 
-**Dependências:** T7 e relevância v3 aplicada no remoto · **Arquivos:** `supabase/migrations/<timestamp>_drop_google_calendar_sync.sql`, `scripts/verify-weekly-planning.mjs` · **Tamanho:** S
+**Dependências:** deploy do código da Fase A · **Arquivos:** `supabase/migrations/20260918235900_drop_google_calendar_sync.sql`, `supabase/rollbacks/`, `scripts/verify-drop-calendar-sync.mjs` · **Tamanho:** S

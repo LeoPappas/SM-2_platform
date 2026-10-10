@@ -3,9 +3,16 @@
 -- preference and the triggers that propagated it can go. Calendar event ids are not recoverable
 -- afterwards: the events themselves live in Google and are not touched here.
 --
+-- PRECONDITION: deploy the application version without Calendar code BEFORE applying this file.
+-- Older bundles still write calendar_* columns and would fail once they are dropped. The new code
+-- runs fine against the old schema (the old triggers fill the columns), so code goes first.
+--
 -- Ordering: this file sorts before the relevance v3 migration on purpose. The v3 migration recreates
--- public.complete_block_review and no longer references the Calendar columns, so it can be applied
--- after this one. Rollback: supabase/rollbacks/20260918235900_drop_google_calendar_sync.down.sql (valid before v3 is applied).
+-- public.complete_block_review without the Calendar clause, so it can be applied after this one. If v3
+-- is already applied, the function is left alone (it already carries the relevance snapshots) and the
+-- final check fails the whole migration if any function still mentions a calendar_* column.
+-- Rollback: supabase/rollbacks/20260918235900_drop_google_calendar_sync.down.sql (only before v3 is applied).
+-- Run it through a transactional runner (supabase db push / apply_migration), not a bare psql -f.
 set local lock_timeout = '5s';
 
 drop trigger if exists apply_profile_calendar_sync_to_blocks on public.student_profiles;
@@ -13,6 +20,14 @@ drop trigger if exists inherit_profile_calendar_sync_on_insert on public.questio
 drop function if exists public.apply_profile_calendar_sync_to_blocks();
 drop function if exists public.inherit_profile_calendar_sync();
 
+do $mig$
+begin
+  -- Skip when v3 is present: its complete_block_review also writes the relevance snapshots.
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'block_reviews' and column_name = 'relevance_factor'
+  ) then
+    execute $fn$
 create or replace function public.complete_block_review(p_block_id uuid,p_operation_id uuid,p_review jsonb,p_changes jsonb)
 returns jsonb language plpgsql security invoker set search_path = '' as $$
 declare
@@ -75,6 +90,10 @@ begin
   return jsonb_build_object('block',to_jsonb(v_block),'review',to_jsonb(v_review),'replayed',false);
 end;
 $$;
+    $fn$;
+  end if;
+end
+$mig$;
 
 alter table public.question_blocks
   drop constraint if exists question_blocks_calendar_sync_status_check,
@@ -87,3 +106,17 @@ alter table public.question_blocks
 
 alter table public.student_profiles
   drop column if exists calendar_sync_enabled;
+
+-- Fail loudly (and roll everything back) if a function still depends on a dropped column.
+do $mig$
+declare
+  v_leftover text;
+begin
+  select string_agg(p.oid::regprocedure::text, ', ') into v_leftover
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.prokind = 'f' and pg_get_functiondef(p.oid) ilike '%calendar\_%';
+  if v_leftover is not null then
+    raise exception 'Functions still reference Calendar columns: %', v_leftover;
+  end if;
+end
+$mig$;
