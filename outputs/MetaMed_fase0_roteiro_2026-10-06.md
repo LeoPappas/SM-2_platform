@@ -82,6 +82,8 @@ A Vercel marca `GOOGLE_OAUTH_CLIENT_SECRET` com o alerta `readable-secret`: a va
 
 ## 5. Google Calendar
 
+> **Obsoleto em 2026-10-10.** A integração com o Google Calendar foi removida (`tasks/plan.md`). Esta seção, o cenário 13 e as variáveis `GOOGLE_OAUTH_*` da seção 4 não se aplicam mais. Mantidas apenas como registro.
+
 ### Já verificado
 
 - Projeto oficial tem ID e segredo do Google configurados, e o Google os aceita.
@@ -138,7 +140,7 @@ A data do primeiro contato aceita datas passadas. Cadastre alguns temas com prim
 | 10 | Antecipar uma revisão | Registrar antes da data sugerida | Próxima sugestão parte da data real |
 | 11 | Salvar a mesma revisão em dois dispositivos | Duas abas | Um único contato registrado |
 | 12 | Amostra de 19 versus 20 questões | Duas revisões | Aviso e modo de cálculo mudam no limite |
-| 13 | Calendar sem autorização | Seção 5 | Estudo salvo; pendência identificada; recuperação |
+| 13 | ~~Calendar sem autorização~~ | Obsoleto: integração removida | — |
 | 14 | Mudar o dia de início da semana | Configurações | Semanas já encerradas não mudam |
 
 A lista completa tem 28 cenários no plano de 18/09; estes 14 cobrem o que a reunião tornou prioritário.

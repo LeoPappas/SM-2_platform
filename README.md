@@ -15,7 +15,7 @@ Plataforma semanal de revisao por temas para estudantes de medicina. O aluno cad
 - Atraso criado apos o fechamento da semana, com ocorrencia unica e antiguidade preservada.
 - Movimentacao manual por arrastar ou escolher data, inclusive fora da rotina e em semanas futuras.
 - Previa da proxima semana sem alterar a agenda automatica da semana atual.
-- Conclusao de revisao atomica e idempotente; falha do Calendar preserva o estudo salvo.
+- Conclusao de revisao atomica e idempotente.
 - Decisao manual para uma ultima revisao antes da prova.
 - Calendario com distincao entre janela calculada e dia escolhido.
 - Metricas de progressao e desempenho por grande area ponderadas pela quantidade de questoes.
@@ -53,11 +53,7 @@ Crie um arquivo `.env` na raiz:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-GOOGLE_OAUTH_CLIENT_ID=...
-GOOGLE_OAUTH_CLIENT_SECRET=...
 ```
-
-As credenciais privadas do Google permanecem no servidor e sao usadas para renovar o token de acesso ao Calendar.
 
 ## Banco de dados
 
@@ -144,8 +140,8 @@ npx tsc --noEmit
 npm run build
 ```
 
-## Google Calendar
+## Agenda e login com Google
 
-O motor calcula a proxima sugestao e o planejador escolhe um dia automatico quando ha capacidade. O aluno pode remarcar esse dia manualmente. Com sincronizacao habilitada, cada tema possui um evento ativo para sua proxima revisao; depois do estudo, o evento e atualizado para a nova data. O historico de revisoes permanece na MetaMed.
+O motor calcula a proxima sugestao e o planejador escolhe um dia automatico quando ha capacidade. O aluno pode remarcar esse dia manualmente; o historico de revisoes e a agenda ficam na MetaMed.
 
-As configuracoes permitem vincular ou reconectar Google. A recuperacao de pendencias ocorre ao abrir o dashboard, recuperar foco/conexao ou receber um novo token OAuth. Falhas sao registradas separadamente do salvamento do estudo; uma resposta externa antiga nao substitui a preferencia ou o agendamento mais recente.
+A sincronizacao com o Google Calendar foi removida em outubro de 2026: o escopo `calendar.events` exige verificacao do Google, o token de refresh ficava no navegador e a sincronizacao so rodava com o app aberto. O login com Google continua, apenas com nome e e-mail, e o provedor Google e configurado no Supabase Auth, sem variaveis de ambiente neste projeto.
