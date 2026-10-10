@@ -83,7 +83,7 @@ export function ReviewModal({
         setError("A revisão foi salva. Atualize a página para ver o planejamento atualizado.");
         return;
       }
-      if (!completed.calculation.fallsAfterExam && !completed.calendarError) onClose();
+      if (!completed.calculation.fallsAfterExam) onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível registrar a revisão.");
     } finally {
@@ -116,7 +116,6 @@ export function ReviewModal({
           O intervalo calculado foi mantido em {result.calculation.intervalDays} dias. Você quer separar este tema para uma última revisão antes de {formatDate(examDate)}?
         </p>
         {error && <ErrorMessage>{error}</ErrorMessage>}
-        {result?.calendarError && <p role="status" className="text-sm leading-5 text-amber-700">A revisão foi salva. O Google Calendar ficou pendente: {result.calendarError}</p>}
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
           <button
             type="button"
@@ -145,7 +144,6 @@ export function ReviewModal({
         <Check size={24} className="text-emerald-700" />
         <h2 id={titleId} className="mt-4 text-lg font-semibold text-gray-900">Revisão salva</h2>
         <p className="mt-2 text-sm leading-6 text-gray-600">Próxima sugestão: {formatDate(result.calculation.nextReviewDate)}.</p>
-        {result.calendarError && <p role="status" className="mt-3 text-sm leading-6 text-amber-800">Seu estudo foi registrado. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.</p>}
         {error && <ErrorMessage>{error}</ErrorMessage>}
         <div className="mt-6 flex justify-end"><button type="button" className="button-primary" disabled={submitting} onClick={onClose}>Fechar</button></div>
       </DialogShell>

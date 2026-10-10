@@ -47,11 +47,10 @@ export function ScheduleReviewModal({
     setSubmitting(true);
     setError(null);
     try {
-      const calendar = await scheduleBlockReview({ block, userId, date });
+      await scheduleBlockReview({ block, userId, date });
       setSaved(true);
       await onChanged();
-      if (calendar.ok) onClose();
-      else setError("A data foi salva na MetaMed. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.");
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o planejamento. Atualize a página para conferir a data salva.");
     } finally {
@@ -63,11 +62,10 @@ export function ScheduleReviewModal({
     setSubmitting(true);
     setError(null);
     try {
-      const calendar = await unscheduleBlockReview({ block, userId });
+      await unscheduleBlockReview({ block, userId });
       setSaved(true);
       await onChanged();
-      if (calendar.ok) onClose();
-      else setError("A sugestão automática foi salva. O Google Calendar ficou pendente; reconecte nas configurações para sincronizar.");
+      onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível remover o agendamento.");
     } finally {
@@ -131,9 +129,7 @@ export function ScheduleReviewModal({
 
           <div className="rounded-md border border-gray-200 bg-gray-50 px-3.5 py-3 text-sm leading-5 text-gray-600">
             Janela calculada pelo motor: <span className="font-semibold text-gray-900">{formatDate(block.next_review_date)}</span>.
-            {block.calendar_sync_enabled
-              ? " O mesmo dia será sincronizado com o Google Calendar."
-              : <> O agendamento ficará apenas na <BrandName />.</>}
+            {" "}O agendamento ficará apenas na <BrandName />.
           </div>
 
           {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>}

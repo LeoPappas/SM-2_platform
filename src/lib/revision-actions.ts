@@ -1,5 +1,5 @@
 import type { DifficultyRating, QuestionBlock } from "./database.types";
-import { persistAutomaticReviewSchedule, syncQuestionBlockCalendar, updateQuestionBlockAndSync } from "./calendar-sync";
+import { persistAutomaticReviewSchedule, updateQuestionBlock } from "./question-block-writes";
 import {
   ENGINE_VERSION,
   buildAutomaticRebalanceUpdates,
@@ -110,8 +110,6 @@ export async function completeBlockReview({
       performance_band: calculation.performanceBand,
       calculation_mode: calculation.calculationMode,
       engine_version: ENGINE_VERSION,
-      calendar_sync_status: block.calendar_sync_enabled ? "pending" as const : "disabled" as const,
-      calendar_last_error: null,
   };
   const { data: saved, error: reviewError } = await supabase.rpc("complete_block_review", {
     p_block_id: block.id,
@@ -125,7 +123,6 @@ export async function completeBlockReview({
     }
     throw new Error("Não foi possível confirmar o salvamento da revisão. Tente novamente para concluir a mesma operação.");
   }
-  const calendar = await syncQuestionBlockCalendar({ blockId: block.id, userId });
 
   // A replay returns the originally committed result, even after an uncertain response.
   const savedCalculation = { ...calculation,
@@ -136,7 +133,7 @@ export async function completeBlockReview({
     calculationMode: saved.review.calculation_mode ?? calculation.calculationMode,
     fallsAfterExam: Boolean(examDate && saved.review.new_next_review_date > examDate),
   };
-  return { calculation: savedCalculation, calendarError: calendar.ok ? null : calendar.message };
+  return { calculation: savedCalculation };
 }
 
 export async function scheduleBlockReview({
@@ -148,17 +145,15 @@ export async function scheduleBlockReview({
   userId: string;
   date: string;
 }) {
-  const result = await updateQuestionBlockAndSync({
+  await updateQuestionBlock({
     blockId: block.id,
     userId,
     expectedRepetitions: block.repetitions,
     changes: {
       planned_review_date: date,
       planning_source: "manual",
-      calendar_sync_status: block.calendar_sync_enabled ? "pending" : "disabled",
     },
   });
-  return result.calendar;
 }
 
 export async function unscheduleBlockReview({
@@ -173,18 +168,15 @@ export async function unscheduleBlockReview({
     targetDate: block.next_review_date,
     excludeBlockId: block.id,
   });
-  const result = await updateQuestionBlockAndSync({
+  await updateQuestionBlock({
     blockId: block.id,
     userId,
     expectedRepetitions: block.repetitions,
     changes: {
       planned_review_date: automaticDate,
       planning_source: "automatic",
-      calendar_sync_status: block.calendar_sync_enabled ? "pending" : "disabled",
-      calendar_last_error: null,
     },
   });
-  return result.calendar;
 }
 
 export async function findAutomaticReviewDate({
@@ -287,7 +279,7 @@ export async function rebalanceAutomaticReviewSlots({
     block: blocks!.find(block => block.id === update.id)!, userId,
     date: update.planned_review_date, source: update.planning_source,
   })));
-  return { updated: results.length, calendarPending: results.filter(result => !result.calendar.ok).length };
+  return { updated: results.length };
 }
 
 export async function setPreExamReviewRequest({
@@ -299,10 +291,10 @@ export async function setPreExamReviewRequest({
   userId: string;
   requested: boolean;
 }) {
-  await updateQuestionBlockAndSync({
+  await updateQuestionBlock({
     blockId,
     userId,
-    changes: { pre_exam_review_requested: requested, calendar_sync_status: "pending" },
+    changes: { pre_exam_review_requested: requested },
   });
 }
 

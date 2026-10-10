@@ -4,17 +4,11 @@ import type { BlockReview, Database, QuestionBlock, StudentProfile } from "./dat
 const api = vi.hoisted(() => ({
   from: vi.fn(),
   rpc: vi.fn(),
-  createEvent: vi.fn(),
-  deleteEvent: vi.fn(),
 }));
 vi.mock("./supabase", () => ({ supabase: { from: api.from, rpc: api.rpc } }));
-vi.mock("./calendar-auth", () => ({
-  createOrUpdateCalendarEventWithAuth: api.createEvent,
-  deleteCalendarEventWithAuth: api.deleteEvent,
-}));
 
 import { completeBlockReview, scheduleBlockReview } from "./revision-actions";
-import { reconcileQuestionBlocksCalendar, syncQuestionBlockCalendar } from "./calendar-sync";
+import { deleteQuestionBlock, persistAutomaticReviewSchedule } from "./question-block-writes";
 
 type CompletionArgs = Database["public"]["Functions"]["complete_block_review"]["Args"];
 type StoredRow = Record<string, unknown>;
@@ -24,13 +18,14 @@ let savedReviews: BlockReview[];
 let readError: string | null;
 let mutationNumber: number;
 
-/** Equality predicates execute against current storage. Reads are snapshots, allowing a
- * Calendar request to race with a later edit without accidentally sharing row references.
+/** Equality predicates execute against current storage. Reads are snapshots, so a result
+ * in flight cannot accidentally share row references with a later edit.
  */
 function query(table: string) {
   const predicates = new Map<string, unknown>();
   let mutation: Partial<QuestionBlock> | null = null;
   let automaticOnly = false;
+  let deleting = false;
   const execute = (single: boolean) => {
     if (!mutation && readError === table) return { data: null, error: { message: "Read failed" } };
     const source: StoredRow[] = table === "student_profiles" ? [profile as unknown as StoredRow]
@@ -41,12 +36,14 @@ function query(table: string) {
     if (mutation) {
       for (const row of matches) Object.assign(row, mutation, { updated_at: `version-${++mutationNumber}` });
     }
+    if (deleting) for (const row of matches) source.splice(source.indexOf(row), 1);
     const snapshot = structuredClone(matches);
     return { data: single ? snapshot[0] ?? null : snapshot, error: null };
   };
   const fluent = {
     select: () => fluent,
     update: (patch: Partial<QuestionBlock>) => { mutation = patch; return fluent; },
+    delete: () => { deleting = true; return fluent; },
     eq: (key: string,value: unknown) => { predicates.set(key,value); return fluent; },
     or: () => { automaticOnly = true; return fluent; },
     single: () => Promise.resolve(execute(true)),
@@ -108,12 +105,10 @@ beforeEach(() => {
   mutationNumber = 0;
   api.from.mockImplementation(query);
   api.rpc.mockImplementation((_name: string,args: CompletionArgs) => Promise.resolve(commit(args)));
-  api.createEvent.mockResolvedValue({ ok: true, eventId: "calendar-event-1", status: "synced" });
-  api.deleteEvent.mockResolvedValue({ ok: true });
 });
 afterEach(() => vi.useRealTimers());
 
-describe("review transaction and external Calendar boundary", () => {
+describe("review transaction", () => {
   it("retries an uncertain committed operation and returns its original date and interval", async () => {
     const input = completionInput();
     api.rpc.mockImplementationOnce((_name: string,args: CompletionArgs) => {
@@ -122,7 +117,6 @@ describe("review transaction and external Calendar boundary", () => {
     });
     await expect(completeBlockReview(input)).rejects.toThrow("mesma operação");
     expect(savedReviews).toHaveLength(1);
-    expect(api.createEvent).not.toHaveBeenCalled();
     const original = structuredClone(savedReviews[0]);
     // A changed form or changed availability must not make replay display a new calculation.
     const result = await completeBlockReview({ ...input, correctCount: 2 });
@@ -133,17 +127,7 @@ describe("review transaction and external Calendar boundary", () => {
     expect(result.calculation.nextReviewDate).toBe(original.new_next_review_date);
     expect(result.calculation.intervalDays).toBe(original.new_interval_days);
     expect(result.calculation.accuracy).toBe(original.accuracy_percentage);
-    expect(api.createEvent).toHaveBeenCalledWith(expect.objectContaining({ date: blocks[0].planned_review_date }));
-  });
-
-  it("reports an unexpected Calendar failure after commit without losing the saved study", async () => {
-    api.createEvent.mockRejectedValueOnce(new Error("Calendar connection lost"));
-    const result = await completeBlockReview(completionInput());
-    expect(savedReviews).toHaveLength(1);
-    expect(blocks[0].repetitions).toBe(1);
-    expect(blocks[0].calendar_sync_status).toBe("pending");
-    expect(result.calculation.nextReviewDate).toBe(savedReviews[0].new_next_review_date);
-    expect(result.calendarError).toBe("Calendar connection lost");
+    expect(result).not.toHaveProperty("calendarError");
   });
 
   it("leaves numeric relevance snapshots for the database activation policy to derive", async () => {
@@ -173,31 +157,31 @@ describe("review transaction and external Calendar boundary", () => {
       .rejects.toThrow("outra sessão");
     expect(blocks[0].planned_review_date).toBe("2026-10-01");
     expect(blocks[0].repetitions).toBe(1);
-    expect(api.createEvent).not.toHaveBeenCalled();
   });
 });
 
-describe("Calendar state concurrency", () => {
-  it("does not let a result in flight overwrite a newer date or disabled preference", async () => {
-    api.createEvent.mockImplementationOnce(async () => {
-      // Another session changes scheduling while the first external request is in flight.
-      Object.assign(blocks[0],{ planned_review_date: "2026-10-02", calendar_sync_enabled: false,
-        calendar_sync_status: "pending", updated_at: "version-new-session" });
-      return { ok: true, eventId: "outdated-calendar-event", status: "synced" };
+describe("guarded block writes", () => {
+  it("lets an automatic plan replace an automatic date for the same revision", async () => {
+    const result = await persistAutomaticReviewSchedule({
+      block: structuredClone(blocks[0]), userId: "student-1", date: "2026-09-25", source: "automatic",
     });
-    const result = await syncQuestionBlockCalendar({ blockId: "block-1", userId: "student-1" });
-    expect(result.ok).toBe(false);
-    expect(blocks[0].planned_review_date).toBe("2026-10-02");
-    expect(blocks[0].calendar_sync_enabled).toBe(false);
-    expect(blocks[0].calendar_sync_status).toBe("pending");
-    expect(blocks[0].calendar_event_id).toBeNull();
-    expect(blocks[0].updated_at).toBe("version-new-session");
-    expect(api.createEvent).toHaveBeenCalledWith(expect.objectContaining({ date: "2026-09-18" }));
+    expect(result.block?.planned_review_date).toBe("2026-09-25");
+    expect(blocks[0].planned_review_date).toBe("2026-09-25");
   });
 
-  it("surfaces reconciliation read failures instead of reporting no pending events", async () => {
-    readError = "question_blocks";
-    await expect(reconcileQuestionBlocksCalendar("student-1")).rejects.toThrow("consultar os agendamentos pendentes");
-    expect(api.createEvent).not.toHaveBeenCalled();
+  it("does not let a stale automatic plan replace a manual move", async () => {
+    const stale = structuredClone(blocks[0]);
+    Object.assign(blocks[0], { planned_review_date: "2026-10-02", planning_source: "manual" });
+    const result = await persistAutomaticReviewSchedule({ block: stale, userId: "student-1", date: "2026-09-25", source: "automatic" });
+    expect(result.block).toBeNull();
+    expect(blocks[0].planned_review_date).toBe("2026-10-02");
+    expect(blocks[0].planning_source).toBe("manual");
+  });
+
+  it("never deletes a block that belongs to another student", async () => {
+    await deleteQuestionBlock({ block: blocks[0], userId: "another-student" });
+    expect(blocks).toHaveLength(1);
+    await deleteQuestionBlock({ block: blocks[0], userId: "student-1" });
+    expect(blocks).toHaveLength(0);
   });
 });

@@ -10,7 +10,7 @@ import { OnboardingPanel } from "@/components/onboarding-panel";
 import { ReviewModal } from "@/components/review-modal";
 import { ScheduleReviewModal } from "@/components/schedule-review-modal";
 import { WeeklyAvailabilityModal } from "@/components/weekly-availability-modal";
-import { persistAutomaticReviewSchedule } from "@/lib/calendar-sync";
+import { persistAutomaticReviewSchedule } from "@/lib/question-block-writes";
 import type { QuestionBlock, StudentProfile, WeeklyPlan as SavedWeeklyPlan } from "@/lib/database.types";
 import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { planningToday } from "@/lib/planning-date";
@@ -129,7 +129,6 @@ export default function HomeDashboardPage() {
         return saved && block.repetitions === saved.repetitions && block.planning_source !== "manual" ? { ...block, ...saved } : block;
       }));
       if (results.some(result => result.status === "rejected")) setError("Algumas datas ainda não foram confirmadas. Atualize a semana para tentar novamente.");
-      if (results.some(result => result.status === "fulfilled" && !result.value.calendar.ok)) setNotice("As datas foram salvas. O Google Calendar tem alterações pendentes e tentará sincronizar novamente.");
     }).finally(() => { savingPlan.current = false; });
   }, [plan, scheduleSignature, session, blocks, weekOffset]);
 
@@ -141,9 +140,9 @@ export default function HomeDashboardPage() {
     setError(null);
     let saved = false;
     try {
-      const calendar = await scheduleBlockReview({ block, userId: session.user.id, date });
+      await scheduleBlockReview({ block, userId: session.user.id, date });
       saved = true;
-      setNotice(calendar.ok ? `Revisão movida para ${formatDate(date)}.` : "A data foi salva. O Google Calendar está pendente de sincronização.");
+      setNotice(`Revisão movida para ${formatDate(date)}.`);
       await loadData(session.user.id);
     } catch (cause) {
       setError(saved ? "A data foi salva. Atualize a semana para conferir." : cause instanceof Error ? cause.message : "Não foi possível mover a revisão.");
@@ -221,7 +220,7 @@ function TaskColumn({ title, count, icon, tone, children }: { title: string; cou
 
 function TopicRow({ block, item, completedDate, onSchedule, onReview, draggable = false }: { block: QuestionBlock; item?: WeeklyPlanItem; completedDate?: string; onSchedule?: () => void; onReview?: () => void; draggable?: boolean }) {
   return <div draggable={draggable} onDragStart={event => { event.dataTransfer.setData("text/metamed-block", block.id); event.dataTransfer.effectAllowed = "move"; }} className="flex min-h-32 gap-3 px-4 py-4"><div className="min-w-0 flex-1">
-    <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold text-gray-900">{block.title}</h3>{item?.isExtra && <span className="status-badge bg-gray-200 text-gray-800">Extra</span>}{item?.isAnticipation && <span className="status-badge bg-blue-50 text-blue-700">Antecipação</span>}{block.backlog_since && !completedDate && <span className="status-badge bg-amber-50 text-amber-700">Atraso desde {formatDate(block.backlog_since)}</span>}{block.pre_exam_review_requested && <span className="status-badge bg-amber-50 text-amber-700">Antes da prova</span>}{block.calendar_sync_enabled && ["pending", "failed"].includes(block.calendar_sync_status) && <span className="status-badge bg-gray-200 text-gray-800">Calendar pendente</span>}</div>
+    <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold text-gray-900">{block.title}</h3>{item?.isExtra && <span className="status-badge bg-gray-200 text-gray-800">Extra</span>}{item?.isAnticipation && <span className="status-badge bg-blue-50 text-blue-700">Antecipação</span>}{block.backlog_since && !completedDate && <span className="status-badge bg-amber-50 text-amber-700">Atraso desde {formatDate(block.backlog_since)}</span>}{block.pre_exam_review_requested && <span className="status-badge bg-amber-50 text-amber-700">Antes da prova</span>}</div>
     <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-gray-500"><span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${areaTone(block.major_area)}`} />{block.major_area} · {block.specialty}</p>
     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500"><span>{block.accuracy_percentage}% · {block.performance_band ? performanceLabel(block.performance_band) : "legado"}</span><span>Importância {importanceLabel(block.importance).toLocaleLowerCase("pt-BR")}</span>{completedDate && <span className="font-semibold text-emerald-700">Concluído em {formatDate(completedDate)}</span>}{!completedDate && item?.scheduledDate && <span className="font-semibold text-blue-700">Agendada: {formatDate(item.scheduledDate)}</span>}</div>
     <p className="mt-2 text-xs text-gray-500">Próxima sugestão: <span className="font-medium text-gray-800">{formatDate(block.next_review_date)}</span></p>
