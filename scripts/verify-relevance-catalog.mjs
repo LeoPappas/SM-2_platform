@@ -58,7 +58,7 @@ try {
     await db.exec(await readFile(resolve(migrationDir, migration), "utf8"));
   }
   await db.query("insert into auth.users(id) values($1)", [owner]);
-  await db.query("insert into public.student_profiles(user_id,calendar_sync_enabled) values($1,false)", [owner]);
+  await db.query("insert into public.student_profiles(user_id) values($1)", [owner]);
   await db.query(`insert into public.question_blocks(id,user_id,title,area_name,question_count,correct_count,accuracy_percentage,
     perceived_difficulty,study_date,next_review_date,planned_review_date,planning_source,interval_days,repetitions)
     values($1,$2,'Legacy','Clínica Médica',10,7,70,'Médio',current_date-30,current_date,current_date,'automatic',7,0)`, [legacyBlockId, owner]);
