@@ -62,8 +62,6 @@ function blockFixture(): QuestionBlock {
     exam_target_id: null, source: "MetaMed", question_count: 20, correct_count: 12, accuracy_percentage: 60,
     perceived_difficulty: "Médio", time_spent_minutes: null, priority_weight: 2, study_date: "2026-09-01",
     repetitions: 0, easiness_factor: 2.5, interval_days: 14, next_review_date: "2026-09-15",
-    calendar_event_id: null, calendar_sync_enabled: true, calendar_sync_status: "pending",
-    calendar_last_error: null, calendar_last_synced_at: null, calendar_sync_fingerprint: null,
     major_area: "Clínica Médica", specialty: "Cardiologia", importance: "media", suggested_importance: null,
     last_review_date: "2026-09-01", planned_review_date: "2026-09-18", planning_source: "automatic",
     backlog_since: null, backlog_urgency: null, pre_exam_review_requested: false,
