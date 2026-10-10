@@ -12,7 +12,6 @@ import { ScheduleReviewModal } from "@/components/schedule-review-modal";
 import { WeeklyAvailabilityModal } from "@/components/weekly-availability-modal";
 import { persistAutomaticReviewSchedule } from "@/lib/question-block-writes";
 import type { QuestionBlock, StudentProfile, WeeklyPlan as SavedWeeklyPlan } from "@/lib/database.types";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { planningToday } from "@/lib/planning-date";
 import { scheduleBlockReview } from "@/lib/revision-actions";
 import { buildWeeklyPlan, importanceLabel, normalizeStudyAvailability, performanceLabel, type WeeklyPlanItem } from "@/lib/revision-engine";
@@ -87,7 +86,6 @@ export default function HomeDashboardPage() {
     let active = true;
     void supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
       if (!active) return;
-      persistGoogleProviderToken(activeSession);
       setSession(activeSession);
       if (activeSession) void loadData(activeSession.user.id);
       else setLoading(false);

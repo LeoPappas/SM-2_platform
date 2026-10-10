@@ -14,7 +14,6 @@ import {
 import { TopicFormModal } from "@/components/topic-form-modal";
 import { deleteQuestionBlock } from "@/lib/question-block-writes";
 import type { BlockReview, MajorArea, QuestionBlock, StudentProfile } from "@/lib/database.types";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { MAJOR_AREAS } from "@/lib/medical-catalog";
 import { supabase } from "@/lib/supabase";
 
@@ -64,7 +63,6 @@ export default function TemasPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
-      persistGoogleProviderToken(activeSession);
       setSession(activeSession);
       if (activeSession) loadData(activeSession.user.id);
       else setLoading(false);

@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BrandName } from "@/components/brand-name";
 import { requestEmailLogin } from "@/lib/email-login";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
@@ -17,13 +16,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      persistGoogleProviderToken(session);
       if (session) router.push("/dashboard");
       else setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      persistGoogleProviderToken(session);
       if (session) router.push("/dashboard");
     });
 
@@ -35,11 +32,6 @@ export default function LoginPage() {
       provider: "google",
       options: {
         redirectTo: `${window.location.origin}/dashboard`,
-        scopes: "https://www.googleapis.com/auth/calendar.events",
-        queryParams: {
-          prompt: "consent",
-          access_type: "offline",
-        },
       },
     });
   };

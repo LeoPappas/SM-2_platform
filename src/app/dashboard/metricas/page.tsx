@@ -5,7 +5,6 @@ import type { Session } from "@supabase/supabase-js";
 import { differenceInCalendarDays } from "date-fns";
 import { AlertTriangle, BarChart3, BookOpenCheck, CircleGauge, Target } from "lucide-react";
 import type { BlockReview, QuestionBlock, StudentProfile } from "@/lib/database.types";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { MAJOR_AREAS } from "@/lib/medical-catalog";
 import { classifyPerformance, performanceLabel } from "@/lib/revision-engine";
 import { buildWeeklyPerformanceTrend, questionWeightedAccuracy, todayInTimezone } from "@/lib/performance-metrics";
@@ -34,7 +33,6 @@ export default function PerformancePage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
-      persistGoogleProviderToken(activeSession);
       setSession(activeSession);
       if (activeSession) loadData(activeSession.user.id);
       else setLoading(false);
