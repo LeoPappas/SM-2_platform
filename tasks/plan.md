@@ -39,23 +39,23 @@ Retirar a sincronização de revisões com o Google Calendar. O calendário inte
 Detalhes e critérios de aceite em [`tasks/todo.md`](todo.md).
 
 ### Fase A — Código (um deploy, schema intacto)
-- [ ] T1: Separar as escritas protegidas de `question_blocks` da sincronização
-- [ ] T2: Telas de estudo sem Calendar (revisão, agendamento, tema, Início, Temas)
-- [ ] T3: Configurações sem a seção Google Calendar
-- [ ] T4: Login com escopos básicos, layout sem reconciliação e limpeza dos tokens antigos
-- [ ] T5: Apagar os módulos mortos, a rota de refresh e os tipos `calendar_*`
-- [ ] T6: README, `.env.example`, script de verificação e roteiro da Fase 0
+- [x] T1: Separar as escritas protegidas de `question_blocks` da sincronização
+- [x] T2: Telas de estudo sem Calendar (revisão, agendamento, tema, Início, Temas)
+- [x] T3: Configurações sem a seção Google Calendar
+- [x] T4: Login com escopos básicos, layout sem reconciliação e limpeza dos tokens antigos
+- [x] T5: Apagar os módulos mortos, a rota de refresh e os tipos `calendar_*`
+- [x] T6: README, `.env.example`, script de verificação e roteiro da Fase 0
 
 ### Checkpoint A
-- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit` e `npm run build` passam
-- [ ] Nenhuma ocorrência de `googleapis.com/calendar`, `calendar_sync`, `calendar_event` ou `provider_token` em `src/`
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit` e `npm run build` passam
+- [x] Nenhuma ocorrência de `googleapis.com/calendar`, `calendar_sync`, `calendar_event` ou `provider_token` em `src/`
 - [ ] Fluxo manual: login com Google pede só nome e e-mail; cadastrar tema, revisar, remarcar e excluir funcionam; nenhuma requisição a `googleapis.com`
 
 ### Fase B — Infraestrutura (depois do deploy da Fase A em produção)
 - [ ] T7: Desligar Calendar no Google Cloud e na Vercel; apagar o evento que sobrou
 
 ### Fase C — Contract do schema (deploy separado, depois da relevância v3 aplicada no remoto)
-- [ ] T8: Migration que remove colunas, triggers, índices e o trecho da RPC
+- [x] T8: Migration que remove colunas, triggers, índices e o trecho da RPC
 
 ### Checkpoint final
 - [ ] A migration passa numa branch do Supabase antes de ir para produção

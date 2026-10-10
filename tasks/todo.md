@@ -63,7 +63,7 @@ Plano: [`tasks/plan.md`](plan.md). Verificação padrão de cada tarefa: `npm te
 **Dependências:** T5 · **Arquivos:** `README.md`, `.env.example`, `scripts/verify-weekly-planning.mjs`, `outputs/MetaMed_fase0_roteiro_2026-10-06.md` · **Tamanho:** S
 
 ## Checkpoint A
-- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit` e `npm run build` passam
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit` e `npm run build` passam
 - [ ] Teste manual no preview: login com Google, cadastro de tema, revisão, remarcação, exclusão; nenhuma requisição a `googleapis.com`
 - [ ] Revisão humana antes de fazer merge em `main`
 
@@ -81,7 +81,9 @@ Plano: [`tasks/plan.md`](plan.md). Verificação padrão de cada tarefa: `npm te
 
 ## Fase C — Contract do schema (deploy separado)
 
-### T8: Migration de remoção
+### T8: Migration de remoção (escrita e testada; NÃO aplicada no remoto)
+
+> Implementada como `supabase/migrations/20260918235900_drop_google_calendar_sync.sql`, antes da v3 de propósito, com rollback em `supabase/rollbacks/`. A v3 não aplicada e o gerador foram ajustados para não recriar a cláusula do Calendar. Aplicar no remoto só depois do deploy do código da Fase A.
 
 **Descrição:** Uma migration nova que:
 1. remove os triggers `apply_profile_calendar_sync_to_blocks` e `inherit_profile_calendar_sync_on_insert` e as funções com o mesmo nome;
