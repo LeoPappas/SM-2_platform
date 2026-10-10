@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { BrandName } from "@/components/brand-name";
+import { requestEmailLogin } from "@/lib/email-login";
 import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [emailMessage, setEmailMessage] = useState<{ error: boolean; text: string } | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -40,6 +44,17 @@ export default function LoginPage() {
     });
   };
 
+  const handleEmailLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSending(true);
+    setEmailMessage(null);
+    const result = await requestEmailLogin(email, `${window.location.origin}/dashboard`);
+    setSending(false);
+    setEmailMessage(result.ok
+      ? { error: false, text: "Enviamos um link de acesso para o seu e-mail. Abra-o neste navegador." }
+      : { error: true, text: result.message });
+  };
+
   if (loading) return null;
 
   return (
@@ -48,6 +63,17 @@ export default function LoginPage() {
         <Image src="/metamed-logo.svg" alt="" width={56} height={56} className="mx-auto mb-5 h-14 w-14 object-contain" priority />
         <h1 className="mb-2 text-2xl font-bold text-gray-900"><BrandName /> Revisão</h1>
         <p className="mb-8 text-sm text-gray-500">Quais temas você precisa revisar nesta semana?</p>
+
+        <form onSubmit={handleEmailLogin} className="mb-6 space-y-3 text-left">
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-gray-900">E-mail</span>
+            <input type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="voce@exemplo.com" className="field-control" />
+          </label>
+          <button type="submit" disabled={sending} className="button-primary w-full">{sending ? "Enviando..." : "Receber link de acesso"}</button>
+          {emailMessage && <p role={emailMessage.error ? "alert" : "status"} className={`text-sm ${emailMessage.error ? "text-red-700" : "text-gray-600"}`}>{emailMessage.text}</p>}
+        </form>
+
+        <p className="mb-6 flex items-center gap-3 text-xs text-gray-500" aria-hidden="true"><span className="h-px flex-1 bg-gray-200" />ou<span className="h-px flex-1 bg-gray-200" /></p>
 
         <button
           onClick={handleGoogleLogin}
