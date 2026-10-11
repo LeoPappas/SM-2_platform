@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { differenceInMonths } from "date-fns";
-import { Check, FileUp, Link2, Minus, Plus } from "lucide-react";
+import { Check, FileUp, Minus, Plus } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
 import { readCatalogFile, replaceUploadedCatalog, type ParsedCourseTopic } from "@/lib/course-catalog";
 import type { CourseCatalogSource, StudentProfile } from "@/lib/database.types";
-import { reconcileCalendar } from "@/lib/calendar-reconciliation";
-import { requestGoogleCalendarAccess } from "@/lib/google-provider-token";
 import { planningToday } from "@/lib/planning-date";
 import { rebalanceAutomaticReviewSlots } from "@/lib/revision-actions";
 import { supabase } from "@/lib/supabase";
@@ -52,11 +50,6 @@ export function OnboardingPanel({
   const [city, setCity] = useState(profile?.city ?? "");
   const [studyExperienceYears, setStudyExperienceYears] = useState(profile?.study_experience_years?.toString() ?? "");
   const [phoneNumber, setPhoneNumber] = useState(profile?.phone_number ?? "");
-  const [googleConnected, setGoogleConnected] = useState(false);
-  const [googleIdentityKnown, setGoogleIdentityKnown] = useState(false);
-  const [googleEmail, setGoogleEmail] = useState<string | undefined>();
-  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(profile?.calendar_sync_enabled ?? false);
-  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
@@ -69,20 +62,6 @@ export function OnboardingPanel({
   const horizonMonths = useMemo(() => examDate
     ? Math.max(1, differenceInMonths(new Date(`${examDate}T12:00:00`), new Date(`${preparationStart}T12:00:00`)))
     : 12, [examDate, preparationStart]);
-
-  useEffect(() => {
-    let active = true;
-    supabase.auth.getUserIdentities().then(({ data, error: identityError }) => {
-      if (!active || identityError || !data) return;
-      const identity = data?.identities.find(identity => identity.provider === "google");
-      const connected = Boolean(identity);
-      setGoogleConnected(connected);
-      setGoogleIdentityKnown(true);
-      setGoogleEmail(typeof identity?.identity_data?.email === "string" ? identity.identity_data.email : undefined);
-      if (!profile) setCalendarSyncEnabled(connected);
-    }).catch(() => { /* A temporary identity read failure must not disable a saved preference. */ });
-    return () => { active = false; };
-  }, [profile]);
 
   const toggleDay = (day: number) => {
     const selected = studyDays.includes(day);
@@ -115,25 +94,6 @@ export function OnboardingPanel({
       setUploadedTopics(null);
       setCatalogFilename("");
       setError(cause instanceof Error ? cause.message : "Não foi possível ler o arquivo.");
-    }
-  };
-
-  const connectGoogle = async () => {
-    setConnectingGoogle(true);
-    setError(null);
-    try {
-      const { data: identities, error: identityError } = await supabase.auth.getUserIdentities();
-      if (identityError || !identities) throw identityError ?? new Error("Conta Google indisponível.");
-      const identity = identities.identities.find(item => item.provider === "google");
-      const { error: linkError } = await requestGoogleCalendarAccess({
-        alreadyLinked: Boolean(identity),
-        redirectTo: `${window.location.origin}/dashboard/configuracoes`,
-        loginHint: typeof identity?.identity_data?.email === "string" ? identity.identity_data.email : googleEmail,
-      });
-      if (linkError) throw linkError;
-    } catch {
-      setError("Não foi possível iniciar a conexão com o Google Calendar.");
-      setConnectingGoogle(false);
     }
   };
 
@@ -175,7 +135,6 @@ export function OnboardingPanel({
           course_theme_total: topicTotal,
           course_catalog_source: catalogSource,
           course_catalog_filename: catalogSource === "upload" ? catalogFilename : null,
-          calendar_sync_enabled: googleIdentityKnown ? googleConnected && calendarSyncEnabled : calendarSyncEnabled,
           birth_date: birthDate || null,
           exam_interests: normalizedInterests,
           city: city.trim() || null,
@@ -188,9 +147,8 @@ export function OnboardingPanel({
 
       if (saveError || !data) throw new Error("Não foi possível salvar suas preferências.");
       let planningPending = false;
-      let calendarPending = false;
       try {
-        const rebalanced = await rebalanceAutomaticReviewSlots({
+        await rebalanceAutomaticReviewSlots({
           userId,
           studyDays: data.study_days,
           dailyCapacity: data.daily_theme_capacity,
@@ -198,24 +156,13 @@ export function OnboardingPanel({
           weekStartsOn: data.week_starts_on,
           timezone: data.timezone,
         });
-        calendarPending = rebalanced.calendarPending > 0;
       } catch {
         planningPending = true;
       }
-      try {
-        const calendarResult = await reconcileCalendar(userId);
-        calendarPending = calendarResult.failed > 0;
-      } catch {
-        calendarPending = true;
-      }
       await onSaved(data);
-      setSavedMessage(planningPending && calendarPending
-        ? "Preferências salvas. A reorganização do plano e a sincronização com o Google Calendar ficaram pendentes."
-        : planningPending
-          ? "Preferências salvas. Alguns estudos ainda precisam ser reorganizados; confira seu plano ao voltar ao Início."
-          : calendarPending
-            ? "Preferências salvas. Alguns eventos do Google Calendar ficaram pendentes. Reconecte se a permissão precisar ser renovada."
-            : "Preferências salvas e planejamento atualizado.");
+      setSavedMessage(planningPending
+        ? "Preferências salvas. Alguns estudos ainda precisam ser reorganizados; confira seu plano ao voltar ao Início."
+        : "Preferências salvas e planejamento atualizado.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível salvar suas preferências.");
     } finally {
@@ -305,33 +252,6 @@ export function OnboardingPanel({
               <span className="shrink-0 text-xs font-semibold text-blue-700">{uploadedTopics ? `${uploadedTopics.length} temas` : "Procurar"}</span>
               <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={event => chooseFile(event.target.files?.[0])} className="sr-only" />
             </label>
-          )}
-        </FormSection>
-
-        <FormSection title="Google Calendar" description="Quando habilitado, todos os blocos de estudo são criados e atualizados automaticamente no seu calendário.">
-          {googleConnected ? (
-            <div className="max-w-3xl space-y-4">
-              <div className="flex items-center gap-3 text-sm font-medium text-emerald-700"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50"><Check size={17} /></span>Conta Google vinculada</div>
-              <button type="button" onClick={connectGoogle} disabled={connectingGoogle} className="button-secondary"><Link2 size={16} /> {connectingGoogle ? "Reconectando..." : "Reconectar Google Calendar"}</button>
-              <p className="text-xs leading-5 text-gray-500">Renove a permissão usando a mesma conta Google quando houver falha de sincronização.</p>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={calendarSyncEnabled}
-                onClick={() => setCalendarSyncEnabled(value => !value)}
-                className="flex w-full items-center justify-between gap-5 border-t border-gray-200 pt-4 text-left"
-              >
-                <span>
-                  <span className="block text-sm font-semibold text-gray-900">Sincronizar blocos de estudo</span>
-                  <span className="mt-1 block text-xs leading-5 text-gray-500">Alterações de datas, conteúdo e conclusão serão refletidas no Google Calendar.</span>
-                </span>
-                <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${calendarSyncEnabled ? "bg-blue-700" : "bg-gray-300"}`}>
-                  <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${calendarSyncEnabled ? "translate-x-6" : "translate-x-1"}`} />
-                </span>
-              </button>
-            </div>
-          ) : (
-            <button type="button" onClick={connectGoogle} disabled={connectingGoogle} className="button-secondary"><Link2 size={16} /> {connectingGoogle ? "Conectando..." : "Conectar Google Calendar"}</button>
           )}
         </FormSection>
 

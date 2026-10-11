@@ -5,7 +5,6 @@ export type DifficultyRating =
   | "Difícil"
   | "Muito difícil";
 
-export type CalendarSyncStatus = "pending" | "synced" | "failed" | "disabled";
 export type MajorArea =
   | "Clínica Médica"
   | "Cirurgia"
@@ -49,7 +48,6 @@ export type Database = {
           course_theme_total: number | null;
           course_catalog_source: CourseCatalogSource;
           course_catalog_filename: string | null;
-          calendar_sync_enabled: boolean;
           birth_date: string | null;
           exam_interests: string[];
           city: string | null;
@@ -74,7 +72,6 @@ export type Database = {
           course_theme_total?: number | null;
           course_catalog_source?: CourseCatalogSource;
           course_catalog_filename?: string | null;
-          calendar_sync_enabled?: boolean;
           birth_date?: string | null;
           exam_interests?: string[];
           city?: string | null;
@@ -470,12 +467,6 @@ export type Database = {
           easiness_factor: number;
           interval_days: number;
           next_review_date: string;
-          calendar_event_id: string | null;
-          calendar_sync_enabled: boolean;
-          calendar_sync_status: CalendarSyncStatus;
-          calendar_last_error: string | null;
-          calendar_last_synced_at: string | null;
-          calendar_sync_fingerprint: string | null;
           major_area: MajorArea;
           specialty: string;
           importance: Importance;
@@ -518,12 +509,6 @@ export type Database = {
           easiness_factor?: number;
           interval_days?: number;
           next_review_date?: string;
-          calendar_event_id?: string | null;
-          calendar_sync_enabled?: boolean;
-          calendar_sync_status?: CalendarSyncStatus;
-          calendar_last_error?: string | null;
-          calendar_last_synced_at?: string | null;
-          calendar_sync_fingerprint?: string | null;
           major_area?: MajorArea;
           specialty?: string;
           importance?: Importance;

@@ -23,7 +23,6 @@ import type { BlockReview, QuestionBlock, StudentProfile, WeeklyPlan } from "@/l
 import { planningToday } from "@/lib/planning-date";
 import { normalizeStudyAvailability, resolvePlanningWeek, type WeekStartsOn } from "@/lib/study-availability";
 import { prepareWeeklyPlanning } from "@/lib/weekly-planning";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
 type CalendarEvent = {
@@ -72,7 +71,6 @@ export default function CalendarPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
-      persistGoogleProviderToken(activeSession);
       setSession(activeSession);
       if (activeSession) loadData(activeSession.user.id);
       else setLoading(false);
@@ -222,7 +220,7 @@ export default function CalendarPage() {
               }} className="flex items-center justify-between rounded-md border border-gray-300 px-4 py-3 text-left transition-colors hover:bg-gray-100">
                 <span>
                   <span className="block text-sm font-semibold text-gray-900">{actionEvent.type === "scheduled" ? "Remarcar dia" : "Escolher um dia"}</span>
-                  <span className="mt-0.5 block text-xs text-gray-500">Atualiza a <BrandName /> e o Google Calendar.</span>
+                  <span className="mt-0.5 block text-xs text-gray-500">Atualiza o seu plano na <BrandName />.</span>
                 </span>
                 <CalendarPlus size={17} className="text-blue-700" />
               </button>

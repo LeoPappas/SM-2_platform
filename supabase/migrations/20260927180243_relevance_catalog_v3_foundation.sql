@@ -5797,8 +5797,7 @@ begin
     planned_review_date = (p_changes->>'planned_review_date')::date,planning_source = 'automatic',backlog_since = null,backlog_urgency = null,
     pre_exam_review_requested = false,performance_band = v_review.performance_band,calculation_mode = coalesce(v_review.calculation_mode,calculation_mode),engine_version = v_review.engine_version,
     relevance_factor = v_review.relevance_factor,relevance_formula_version = v_review.relevance_formula_version,
-    relevance_formula_config = v_review.relevance_formula_config,relevance_shadow_interval_days = v_review.relevance_shadow_interval_days,
-    calendar_sync_status = case when calendar_sync_enabled then 'pending' else 'disabled' end,calendar_last_error = null
+    relevance_formula_config = v_review.relevance_formula_config,relevance_shadow_interval_days = v_review.relevance_shadow_interval_days
     where id = p_block_id and user_id = v_user returning * into v_block;
   return jsonb_build_object('block',to_jsonb(v_block),'review',to_jsonb(v_review),'replayed',false);
 end;

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { format } from "date-fns";
 import { AlertTriangle, Check, X } from "lucide-react";
-import { syncQuestionBlockCalendar, updateQuestionBlockAndSync } from "@/lib/calendar-sync";
+import { updateQuestionBlock } from "@/lib/question-block-writes";
 import {
   getCatalogAreas,
   getCatalogSpecialties,
@@ -186,7 +186,6 @@ export function TopicFormModal({
       easiness_factor: 2.5,
       interval_days: calculation.intervalDays,
       next_review_date: calculation.nextReviewDate,
-      calendar_event_id: null,
       major_area: majorArea,
       specialty,
       importance,
@@ -230,12 +229,10 @@ export function TopicFormModal({
       await supabase.from("question_blocks").delete().eq("id", inserted.id).eq("user_id", userId);
       throw new Error("O tema foi revertido porque o primeiro contato não pôde ser salvo.");
     }
-
-    await syncQuestionBlockCalendar({ blockId: inserted.id, userId });
   };
 
   const updateExistingBlock = async (existing: QuestionBlock) => {
-    await updateQuestionBlockAndSync({
+    await updateQuestionBlock({
       blockId: existing.id,
       userId,
       changes: {

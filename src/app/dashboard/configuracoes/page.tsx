@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { OnboardingPanel } from "@/components/onboarding-panel";
 import type { StudentProfile } from "@/lib/database.types";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { supabase } from "@/lib/supabase";
 
 export default function SettingsPage() {
@@ -15,7 +14,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session: activeSession } }) => {
-      persistGoogleProviderToken(activeSession);
       setSession(activeSession);
       if (activeSession) {
         const { data } = await supabase

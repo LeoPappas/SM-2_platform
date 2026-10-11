@@ -12,9 +12,8 @@ import {
   X,
 } from "lucide-react";
 import { TopicFormModal } from "@/components/topic-form-modal";
-import { deleteQuestionBlockWithCalendar } from "@/lib/calendar-sync";
+import { deleteQuestionBlock } from "@/lib/question-block-writes";
 import type { BlockReview, MajorArea, QuestionBlock, StudentProfile } from "@/lib/database.types";
-import { persistGoogleProviderToken } from "@/lib/google-provider-token";
 import { MAJOR_AREAS } from "@/lib/medical-catalog";
 import { supabase } from "@/lib/supabase";
 
@@ -64,7 +63,6 @@ export default function TemasPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: activeSession } }) => {
-      persistGoogleProviderToken(activeSession);
       setSession(activeSession);
       if (activeSession) loadData(activeSession.user.id);
       else setLoading(false);
@@ -98,7 +96,7 @@ export default function TemasPage() {
     setError(null);
 
     try {
-      await deleteQuestionBlockWithCalendar({ block: deleteBlock, userId: session.user.id });
+      await deleteQuestionBlock({ block: deleteBlock, userId: session.user.id });
       await loadData(session.user.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível excluir o tema.");
@@ -217,8 +215,6 @@ function TopicRow({
         <div className="flex items-center gap-2">
           <h2 className="truncate text-base font-semibold text-gray-900">{block.title}</h2>
           {block.major_area === "A classificar" && <span className="status-badge bg-amber-50 text-amber-700">Classificar</span>}
-          {block.calendar_sync_enabled && block.calendar_sync_status === "pending" && <span className="status-badge bg-gray-200 text-gray-800">Sincronizando</span>}
-          {block.calendar_sync_enabled && block.calendar_sync_status === "failed" && <span className="status-badge bg-red-50 text-red-700">Reconectar Calendar</span>}
         </div>
         <p className="mt-1 truncate text-xs font-medium text-gray-500">{block.major_area} · {block.specialty}</p>
       </div>
