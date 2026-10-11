@@ -81,7 +81,7 @@ Plano: [`tasks/plan.md`](plan.md). Verificação padrão de cada tarefa: `npm te
 
 ## Fase C — Contract do schema (deploy separado)
 
-### T8: Migration de remoção (escrita e testada; NÃO aplicada no remoto)
+### T8: Migration de remoção (aplicada no remoto em 2026-10-11)
 
 > Implementada como `supabase/migrations/20260918235900_drop_google_calendar_sync.sql`, antes da v3 de propósito, com rollback em `supabase/rollbacks/`. A v3 não aplicada e o gerador foram ajustados para não recriar a cláusula do Calendar. Aplicar no remoto só depois do deploy do código da Fase A.
 
@@ -95,8 +95,8 @@ O caminho de volta recria as colunas com os defaults de antes. Perder um `calend
 
 **Critérios de aceite:**
 - [x] Testada em PGlite (`npm run verify:db`): cadeia do remoto, v3 antes e depois da remoção, rollback exato, idempotência e aborto atômico
-- [ ] **Pré-condição:** código da Fase A em produção antes de aplicar
-- [ ] Aplicada no Supabase de produção (ou numa branch antes): registrar revisão pela RPC, criar tema e salvar preferências
+- [x] Aplicada no Supabase de produção em 2026-10-11, antes do deploy, por decisão do time (só havia contas de teste). Conferido depois: nenhuma coluna, gatilho, índice ou função do Calendar; `complete_block_review` manteve as permissões; dados preservados
+- [ ] Até o deploy da `dev`, a versão publicada (código antigo) falha ao criar tema, remarcar e salvar preferências
 - [ ] As advisories do Supabase não mostram regressão
 
 **Dependências:** deploy do código da Fase A · **Arquivos:** `supabase/migrations/20260918235900_drop_google_calendar_sync.sql`, `supabase/rollbacks/`, `scripts/verify-drop-calendar-sync.mjs` · **Tamanho:** S

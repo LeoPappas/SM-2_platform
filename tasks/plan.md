@@ -58,9 +58,9 @@ Detalhes e critérios de aceite em [`tasks/todo.md`](todo.md).
 - [x] T8: Migration que remove colunas, triggers, índices e o trecho da RPC
 
 ### Checkpoint final
-- [ ] A migration passa numa branch do Supabase antes de ir para produção
-- [ ] `scripts/verify-weekly-planning.mjs` passa
-- [ ] Não há referência ao Calendar no repositório, exceto nas migrations antigas e nos documentos históricos em `outputs/`
+- [x] A migration passa em PGlite (`npm run verify:db`) e foi aplicada no Supabase em 2026-10-11, sem branch, por decisão do time
+- [x] `scripts/verify-weekly-planning.mjs` passa
+- [x] Não há referência ao Calendar em `src/` (`src/lib/calendar-removal.test.ts`), exceto nas migrations antigas e nos documentos históricos em `outputs/`
 
 ## Riscos e mitigações
 
@@ -75,4 +75,4 @@ Detalhes e critérios de aceite em [`tasks/todo.md`](todo.md).
 ## Perguntas em aberto
 
 1. Manter o botão "Entrar com Google" (só escopos básicos) ou deixar apenas o link mágico por e-mail? Recomendação: manter, porque não exige verificação do Google.
-2. ~~A Fase C pode esperar a v3?~~ Decidido: não precisa esperar. A migration está pronta, mas só deve ser aplicada depois do deploy do código da Fase A.
+2. ~~A Fase C pode esperar a v3?~~ Decidido: não precisa esperar. Aplicada em 2026-10-11, antes do deploy, porque ainda não havia usuários reais.
