@@ -19,7 +19,7 @@ Plataforma semanal de revisao por temas para estudantes de medicina. O aluno cad
 - Decisao manual para uma ultima revisao antes da prova.
 - Calendario com distincao entre janela calculada e dia escolhido.
 - Metricas de progressao e desempenho por grande area ponderadas pela quantidade de questoes.
-- Simulador interativo dos parametros do motor.
+- Escolha do cursinho (Lista MetaMed, Medway, MedCof ou Medcurso) e cadastro de temas pela lista de aulas dele, com busca por sinonimos e tema proprio.
 
 Banco de questoes, flashcards, IA e rankings nao fazem parte deste MVP.
 
@@ -36,8 +36,6 @@ Valores iniciais:
 - Amostras abaixo de 20 questoes usam a dificuldade como fator principal.
 - Antecipacao elegivel a partir de urgencia 0,8, apos os atrasos e revisoes devidas da semana.
 - Prioridade: urgencia x fraqueza x importancia.
-
-Os valores experimentais podem ser alterados em `/dashboard/simulador` sem afetar o motor ativo.
 
 ## Requisitos
 
@@ -102,7 +100,7 @@ node scripts/verify-weekly-planning.mjs
 
 A v3 e uma publicacao imutavel e versionada: taxonomia canonica de 492 temas, os catalogos Medway (172 aulas), MedGrupo/Medcurso (90) e MedCof (658), 1.235 vinculos ponderados e a relevancia GLOBAL/2026. A planilha `MetaMed_relevancia_v3.xlsx`, sem a aba `leia-me`, e a fonte da verdade. A plataforma acrescenta apenas o sinonimo `ICC` em `CM-CAR-004`, registrado em `PLATFORM_ALIAS_ADDITIONS` e no relatorio de validacao. `MC-186` fica reservado por tombstone; `MC-375` e o item mantido.
 
-Desde 18/10/2026 as duas migracoes estao no Supabase remoto (`relevance_catalog_v3_foundation` e `activate_course_catalogs`). Os tres catalogos estao ativos e o aluno escolhe o cursinho no onboarding ou em Configuracoes. Ao registrar um tema, a aula guarda `catalog_item_id`, a versao e a nota da publicacao; a importancia sugerida vem da nota (>= 7,5 alta, <= 3,5 baixa, demais media) e entra no motor categorico atual. O motor numerico continua inativo: nenhuma ativacao `shadow` foi criada.
+Desde 18/10/2026 as duas migracoes estao no Supabase remoto (`relevance_catalog_v3_foundation` e `activate_course_catalogs`). Os tres catalogos estao ativos e o aluno escolhe entre Lista MetaMed, Medway, MedCof e Medcurso no onboarding ou em Configuracoes. Ao registrar um tema, a aula guarda `catalog_item_id`, a versao e a nota da publicacao; a importancia sugerida vem da nota (>= 7,5 alta, <= 3,5 baixa, demais media) e entra no motor categorico atual. O motor numerico continua inativo: nenhuma ativacao `shadow` foi criada.
 
 A migracao embute os temas e as aulas num unico documento JSON conferido por MD5, o que a mantem em cerca de 260 KB. Como ainda e grande demais para uma chamada do conector, ela foi aplicada assim: o texto exato do arquivo foi gravado em partes num schema privado temporario, cada parte conferida por MD5, e uma migracao curta conferiu o MD5 do arquivo inteiro, executou o conteudo e apagou o schema. O registro remoto mostra esse carregador, nao o SQL completo.
 
@@ -122,7 +120,7 @@ $env:PGLITE_MODULE = Join-Path $relevanceVerificationDir 'node_modules/@electric
 node scripts/verify-relevance-catalog.mjs
 ```
 
-A ativacao do modo `shadow` do motor continua sendo uma decisao separada e auditavel. O calculo experimental aparece no simulador, mas snapshots de comparacao em revisoes reais so sao criados no banco quando existe uma ativacao GLOBAL em modo `shadow`. O modo ativo ainda nao existe nesta versao e deve ser introduzido por outra migracao somente depois da calibracao.
+A ativacao do modo `shadow` do motor continua sendo uma decisao separada e auditavel. A transformacao experimental da nota fica em `src/lib/relevance-engine.ts`; snapshots de comparacao em revisoes reais so sao criados no banco quando existe uma ativacao GLOBAL em modo `shadow`. O modo ativo ainda nao existe nesta versao e deve ser introduzido por outra migracao somente depois da calibracao.
 
 ## Desenvolvimento local
 

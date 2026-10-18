@@ -26,7 +26,8 @@ Mesmo assim, o arquivo era grande demais para uma chamada do conector. O texto e
 
 ## O que mudou na plataforma
 
-- **Onboarding e Configurações:** novo passo "Qual cursinho você faz?" com Medway, MedCof e Medcurso (MedGrupo). "Outro" mantém a lista MetaMed e o envio de CSV. Trocar de cursinho vale para os próximos temas; os temas já registrados não mudam.
+- **Onboarding e Configurações:** novo passo "Qual cursinho você faz?" com quatro opções, sem descrições: Lista MetaMed, Medway, MedCof e Medcurso. O envio de lista própria em CSV saiu da tela. Trocar de cursinho vale para os próximos temas; os temas já registrados não mudam.
+- **Simulador:** a página e o item do menu foram retirados. A fórmula experimental continua em `src/lib/relevance-engine.ts` para a Fase 3.
 - **Cadastro de tema:** grande área → especialidade → aula do cursinho, com busca por título, área e sinônimo (por exemplo, `ICC`). O aluno sempre escolhe o resultado; nada é associado sozinho.
 - **Vínculo com a aula:** o tema guarda `catalog_item_id`, a versão e a nota da publicação. O primeiro contato grava o mesmo vínculo.
 - **Importância:** vem da nota da aula (≥ 7,5 alta; ≤ 3,5 baixa; demais média) e já entra no motor atual. É o atalho 3.1 do plano.
@@ -43,5 +44,5 @@ Mesmo assim, o arquivo era grande demais para uma chamada do conector. O texto e
 ## Ainda não feito
 
 - Teste visual com login real: a tela depende de entrar com Google ou link por e-mail.
-- Publicação da `dev` na Vercel. A produção ainda roda o código de 06/10, que já falha em alguns fluxos desde a remoção do Calendar no banco (11/10). As migrations de hoje só acrescentam colunas opcionais e não pioram isso.
+- Publicação da `dev` na `main`. A produção roda o código de 11/10 (PR #4, sem Calendar), que é compatível com o banco novo: as migrations de hoje só acrescentam tabelas e colunas opcionais.
 - Medcurso 2026, relevância por prova (Fase 4) e modo `shadow` do motor (Fase 3.2).

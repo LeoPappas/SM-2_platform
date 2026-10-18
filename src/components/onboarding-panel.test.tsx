@@ -66,22 +66,29 @@ describe("OnboardingPanel course choice", () => {
     fireEvent.change(screen.getByLabelText("Data da prova"), { target: { value: "2027-03-01" } });
     await user.click(screen.getByRole("button", { name: /Concluir configuração/ }));
 
-    expect(await screen.findByText("Escolha o seu cursinho ou outra lista de temas.")).toBeTruthy();
+    expect(await screen.findByText("Escolha o seu cursinho.")).toBeTruthy();
     expect(mocks.upserts).toEqual([]);
   });
 
-  it("keeps an existing MetaMed list under Outro and clears the course when switching back", async () => {
+  it("offers only the MetaMed list and the course catalogs, without descriptions", async () => {
+    render(<OnboardingPanel userId="student-1" onSaved={vi.fn()} />);
+    await screen.findByRole("button", { name: "MedCof" });
+    const section = screen.getByRole("heading", { name: "Qual cursinho você faz?" }).closest("section")!;
+    expect([...section.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Lista MetaMed", "Medway", "MedCof"]);
+    expect(section.textContent).not.toMatch(/aulas|Outro|CSV/);
+  });
+
+  it("switches an existing course back to the MetaMed list", async () => {
     const user = userEvent.setup();
     const profile = {
       user_id: "student-1", preferred_name: "Leo", exam_date: "2027-03-01", study_days: [1, 2, 3], daily_theme_capacity: 2,
       course_catalog_source: "course", course_catalog_release_id: "release-medcof", course_theme_total: 658,
     } as unknown as StudentProfile;
     render(<OnboardingPanel userId="student-1" profile={profile} onSaved={vi.fn()} compact />);
-    await waitFor(() => expect(pressed(/MedCof/)).toBe("true"));
-    expect(screen.getByText(/a nova lista vale para os próximos temas/)).toBeTruthy();
+    await waitFor(() => expect(pressed("MedCof")).toBe("true"));
 
-    await user.click(screen.getByRole("button", { name: /^Outro/ }));
-    expect(pressed(/^Lista MetaMed/)).toBe("true");
+    await user.click(screen.getByRole("button", { name: "Lista MetaMed" }));
+    expect(pressed("MedCof")).toBe("false");
     await user.click(screen.getByRole("button", { name: /Salvar alterações/ }));
 
     await waitFor(() => expect(mocks.upserts).toHaveLength(1));

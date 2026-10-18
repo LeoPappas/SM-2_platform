@@ -82,7 +82,7 @@ export type CourseCatalogOption = {
 const PROVIDER_LABELS: Record<string, string> = {
   medway: "Medway",
   medcof: "MedCof",
-  medgrupo: "Medcurso (MedGrupo)",
+  medgrupo: "Medcurso",
 };
 const PROVIDER_ORDER = ["medway", "medcof", "medgrupo"];
 const CATALOG_PAGE_SIZE = 500;
@@ -143,9 +143,7 @@ async function loadCourseRelease(releaseId: string): Promise<CatalogTopic[]> {
     .select("provider_code,provider_name,release_name")
     .eq("id", releaseId)
     .maybeSingle();
-  const sourceLabel = release
-    ? `${courseProviderLabel(release.provider_code, release.provider_name)} · ${release.release_name}`
-    : "Lista do cursinho";
+  const sourceLabel = release ? releaseLabel(release) : "Lista do cursinho";
   const items: CatalogSuggestion[] = [];
   for (let offset = 0; ; offset += CATALOG_PAGE_SIZE) {
     const { data, error } = await supabase.rpc("get_catalog_suggestions", {
@@ -275,6 +273,12 @@ function toCatalogTopic(topic: ParsedCourseTopic, sourceLabel: string): CatalogT
     suggestedImportance: "media",
     sourceLabel,
   };
+}
+
+/** "Medway · Extensivo R1 2026", or just "Medcurso 2020" when the release already names the course. */
+function releaseLabel(release: { provider_code: string; provider_name: string; release_name: string }) {
+  const label = courseProviderLabel(release.provider_code, release.provider_name);
+  return release.release_name.startsWith(label) ? release.release_name : `${label} · ${release.release_name}`;
 }
 
 function providerRank(providerCode: string) {
