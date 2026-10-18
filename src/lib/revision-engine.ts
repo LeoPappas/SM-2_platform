@@ -19,7 +19,8 @@ import {
 export { getWeekBounds, normalizeStudyAvailability, resolvePlanningWeek } from "./study-availability";
 export type { StudyAvailability, StudyAvailabilityInput, WeekStartsOn, PlanningWeek, SavedPlanningWeek } from "./study-availability";
 
-export const ENGINE_VERSION = "metamed-v1";
+// v2: relevance enters the interval and the priority as a 1-10 number.
+export const ENGINE_VERSION = "metamed-v2";
 export const SMALL_SAMPLE_THRESHOLD = 20;
 
 export type EngineConfig = {
@@ -28,12 +29,14 @@ export type EngineConfig = {
   eligibilityThreshold: number;
   firstIntervals: Record<PerformanceBand, number>;
   performanceFactors: Record<PerformanceBand, number>;
-  importanceFactors: Record<Importance, number>;
+  /** Interval multiplier from relevance: maximumFactor at minimumScore down to minimumFactor at maximumScore. */
+  relevanceInterval: { minimumScore: number; maximumScore: number; minimumFactor: number; maximumFactor: number };
   difficultyFactors: Record<DifficultyRating, number>;
   smallSampleFirstIntervals: Record<DifficultyRating, number>;
   smallSampleFactors: Record<DifficultyRating, number>;
   weaknessFactors: Record<PerformanceBand, number>;
-  priorityImportance: Record<Importance, number>;
+  /** Queue weight from relevance: minimumWeight at the lowest score up to maximumWeight at the highest. */
+  relevancePriority: { minimumWeight: number; maximumWeight: number };
 };
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
@@ -52,10 +55,12 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
     bom: 3,
     muito_bom: 6,
   },
-  importanceFactors: {
-    alta: 0.8,
-    media: 1,
-    baixa: 1.2,
+  // Score 10 shortens the interval by 20%, 5.5 keeps it, 1 lengthens it by 20%.
+  relevanceInterval: {
+    minimumScore: 1,
+    maximumScore: 10,
+    minimumFactor: 0.8,
+    maximumFactor: 1.2,
   },
   difficultyFactors: {
     "Muito fácil": 1.2,
@@ -84,18 +89,52 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
     ruim: 1.7,
     muito_ruim: 2.2,
   },
-  priorityImportance: {
-    alta: 3,
-    media: 2,
-    baixa: 1,
+  relevancePriority: {
+    minimumWeight: 1,
+    maximumWeight: 3,
   },
 };
+
+/** Scores at or above this read as "alta" for the student; at or below LOW, as "baixa". */
+export const HIGH_RELEVANCE_SCORE = 7.5;
+export const LOW_RELEVANCE_SCORE = 3.5;
+
+/** The category the student sees for a relevance score. */
+export function importanceFromRelevance(score: number): Importance {
+  if (score >= HIGH_RELEVANCE_SCORE) return "alta";
+  if (score <= LOW_RELEVANCE_SCORE) return "baixa";
+  return "media";
+}
+
+/** The score used for a topic that only has a category; it reproduces the old category factors. */
+export function relevanceFromImportance(importance: Importance) {
+  return { alta: 10, media: 5.5, baixa: 1 }[importance];
+}
+
+export function relevanceIntervalFactor(score: number, config: EngineConfig = DEFAULT_ENGINE_CONFIG) {
+  const { minimumScore, maximumScore, minimumFactor, maximumFactor } = config.relevanceInterval;
+  return maximumFactor - relevancePosition(score, minimumScore, maximumScore) * (maximumFactor - minimumFactor);
+}
+
+export function relevancePriorityWeight(score: number, config: EngineConfig = DEFAULT_ENGINE_CONFIG) {
+  const { minimumScore, maximumScore } = config.relevanceInterval;
+  const { minimumWeight, maximumWeight } = config.relevancePriority;
+  return minimumWeight + relevancePosition(score, minimumScore, maximumScore) * (maximumWeight - minimumWeight);
+}
+
+/** 0 at the lowest score, 1 at the highest; out-of-range or missing scores are clamped. */
+function relevancePosition(score: number, minimumScore: number, maximumScore: number) {
+  const safe = Number.isFinite(score) ? score : (minimumScore + maximumScore) / 2;
+  const clamped = Math.min(maximumScore, Math.max(minimumScore, safe));
+  return (clamped - minimumScore) / (maximumScore - minimumScore);
+}
 
 export type IntervalCalculationInput = {
   questionCount: number;
   correctCount: number;
   perceivedDifficulty: DifficultyRating;
-  importance: Importance;
+  /** Topic relevance from 1 to 10. */
+  relevance: number;
   previousIntervalDays?: number;
   isFirstContact: boolean;
   reviewDate?: string;
@@ -135,7 +174,7 @@ export function calculateNextInterval({
   questionCount,
   correctCount,
   perceivedDifficulty,
-  importance,
+  relevance,
   previousIntervalDays = DEFAULT_ENGINE_CONFIG.minimumIntervalDays,
   isFirstContact,
   reviewDate,
@@ -145,6 +184,7 @@ export function calculateNextInterval({
   const accuracy = calculateAccuracy(correctCount, questionCount);
   const performanceBand = classifyPerformance(accuracy);
   const calculationMode = getCalculationMode(questionCount);
+  const relevanceFactor = relevanceIntervalFactor(relevance, config);
 
   let rawIntervalDays: number;
   if (isFirstContact) {
@@ -154,11 +194,11 @@ export function calculateNextInterval({
   } else if (calculationMode === "small_sample") {
     rawIntervalDays = previousIntervalDays
       * config.smallSampleFactors[perceivedDifficulty]
-      * config.importanceFactors[importance];
+      * relevanceFactor;
   } else {
     rawIntervalDays = previousIntervalDays
       * config.performanceFactors[performanceBand]
-      * config.importanceFactors[importance]
+      * relevanceFactor
       * config.difficultyFactors[perceivedDifficulty];
   }
 
@@ -203,15 +243,15 @@ export function calculateUrgency({
 export function calculatePriority({
   urgency,
   performanceBand,
-  importance,
+  relevance,
   config = DEFAULT_ENGINE_CONFIG,
 }: {
   urgency: number;
   performanceBand: PerformanceBand;
-  importance: Importance;
+  relevance: number;
   config?: EngineConfig;
 }) {
-  return urgency * config.weaknessFactors[performanceBand] * config.priorityImportance[importance];
+  return urgency * config.weaknessFactors[performanceBand] * relevancePriorityWeight(relevance, config);
 }
 
 export type WeeklyPlanItem = {
@@ -376,7 +416,7 @@ export function buildWeeklyPlan({
       priority: calculatePriority({
         urgency: effectiveUrgency,
         performanceBand,
-        importance: block.importance,
+        relevance: block.engine_relevance,
         config,
       }),
       eligible: currentUrgency >= config.eligibilityThreshold,

@@ -494,6 +494,10 @@ export type Database = {
           relevance_shadow_interval_days: number | null;
           /** Archived topics leave planning but keep their history. */
           archived_at: string | null;
+          /** Lista MetaMed topic (canonical taxonomy), when the topic came from it. */
+          canonical_topic_id: string | null;
+          /** 1-10 relevance used by the engine; the student sees only the derived category. */
+          engine_relevance: number;
           created_at: string;
           updated_at: string;
         };
@@ -537,6 +541,8 @@ export type Database = {
           relevance_formula_config?: RelevanceFormulaConfig | null;
           relevance_shadow_interval_days?: number | null;
           archived_at?: string | null;
+          canonical_topic_id?: string | null;
+          engine_relevance?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -573,6 +579,8 @@ export type Database = {
           relevance_formula_version: "global-linear-bounded-v1" | null;
           relevance_formula_config: RelevanceFormulaConfig | null;
           relevance_shadow_interval_days: number | null;
+          /** Relevance the interval was calculated with (filled by the database). */
+          engine_relevance: number | null;
           created_at: string;
         };
         Insert: {
@@ -604,6 +612,7 @@ export type Database = {
           relevance_formula_version?: "global-linear-bounded-v1" | null;
           relevance_formula_config?: RelevanceFormulaConfig | null;
           relevance_shadow_interval_days?: number | null;
+          engine_relevance?: number | null;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["block_reviews"]["Row"]>;

@@ -1,5 +1,6 @@
 import type { CourseCatalogSource, Database, MajorArea, QuestionBlock, StudentProfile } from "./database.types";
-import type { CatalogTopic } from "./medical-catalog";
+import { MAJOR_AREAS, type CatalogTopic } from "./medical-catalog";
+import { importanceFromRelevance } from "./revision-engine";
 
 export type ParsedCourseTopic = {
   sourceOrder: number;
@@ -86,6 +87,8 @@ const PROVIDER_LABELS: Record<string, string> = {
 };
 const PROVIDER_ORDER = ["medway", "medcof", "medgrupo"];
 const CATALOG_PAGE_SIZE = 500;
+/** The Lista MetaMed is the canonical taxonomy of relevance v3, one entry per topic. */
+export const METAMED_TOPIC_TOTAL = 492;
 export const CUSTOM_TOPIC_SOURCE = "Tema próprio";
 
 export function courseProviderLabel(providerCode: string, providerName: string) {
@@ -181,23 +184,66 @@ export async function loadCatalogSuggestions(userId: string, profile?: StudentPr
     }, sourceLabel));
   }
 
-  const { data, error } = await supabase
-    .from("metamed_topics")
-    .select("source_order,original_area,major_area,specialty,title")
-    .order("source_order");
-  if (error) throw new Error("Não foi possível carregar a lista de temas da MetaMed.");
-  return (data ?? []).map(topic => toCatalogTopic({
-    sourceOrder: topic.source_order,
-    originalArea: topic.original_area,
-    majorArea: topic.major_area,
-    specialty: topic.specialty,
-    title: topic.title,
-  }, "MetaMed"));
+  return loadMetaMedTopics();
+}
+
+/**
+ * Lista MetaMed: the canonical topics of the active publication, each scored by
+ * its relevancia_global, with synonyms for search.
+ */
+async function loadMetaMedTopics(): Promise<CatalogTopic[]> {
+  const { supabase } = await import("./supabase");
+  const failure = new Error("Não foi possível carregar a lista de temas da MetaMed.");
+  const { data: release, error: releaseError } = await supabase
+    .from("course_catalog_releases").select("publication_id").eq("status", "active").limit(1).maybeSingle();
+  if (releaseError || !release) throw failure;
+  const publicationId = release.publication_id;
+  // PostgREST returns at most 1,000 rows per request; synonyms exceed that.
+  const pages = async <Row,>(query: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: unknown }>) => {
+    const all: Row[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await query(from, from + 999);
+      if (error) throw failure;
+      all.push(...(data ?? []));
+      if ((data ?? []).length < 1000) return all;
+    }
+  };
+  const [versions, scores, aliases] = await Promise.all([
+    pages((from, to) => supabase.from("canonical_topic_versions").select("topic_id,canonical_name,major_area,specialty")
+      .eq("publication_id", publicationId).order("topic_id").range(from, to)),
+    pages((from, to) => supabase.from("topic_relevance_scores").select("topic_id,score")
+      .eq("publication_id", publicationId).eq("exam_code", "GLOBAL").order("topic_id").range(from, to)),
+    pages((from, to) => supabase.from("canonical_topic_aliases").select("topic_id,alias")
+      .eq("publication_id", publicationId).order("topic_id").range(from, to)),
+  ]);
+  const scoreByTopic = new Map(scores.map(row => [row.topic_id, Number(row.score)]));
+  const aliasesByTopic = new Map<string, string[]>();
+  for (const row of aliases) aliasesByTopic.set(row.topic_id, [...(aliasesByTopic.get(row.topic_id) ?? []), row.alias]);
+  return versions
+    .filter(topic => scoreByTopic.has(topic.topic_id))
+    .map(topic => {
+      const score = scoreByTopic.get(topic.topic_id)!;
+      return {
+        title: topic.canonical_name,
+        catalogArea: topic.major_area,
+        majorArea: topic.major_area,
+        specialty: topic.specialty,
+        suggestedImportance: importanceFromRelevance(score),
+        relevanceScore: score,
+        canonicalTopicId: topic.topic_id,
+        canonicalTopicIds: [topic.topic_id],
+        aliases: aliasesByTopic.get(topic.topic_id) ?? [],
+        sourceLabel: "MetaMed",
+      } satisfies CatalogTopic;
+    })
+    .sort((a, b) => MAJOR_AREAS.indexOf(a.majorArea as (typeof MAJOR_AREAS)[number]) - MAJOR_AREAS.indexOf(b.majorArea as (typeof MAJOR_AREAS)[number])
+      || a.specialty.localeCompare(b.specialty, "pt-BR")
+      || a.canonicalTopicId.localeCompare(b.canonicalTopicId));
 }
 
 /** Topics are told apart by catalog identity; lists without one use the title. */
 export function topicKey(topic: CatalogTopic) {
-  return topic.catalogItemId ?? topic.title;
+  return topic.catalogItemId ?? topic.canonicalTopicId ?? topic.title;
 }
 
 /**
@@ -238,7 +284,9 @@ export async function findCatalogMatches({
 }
 
 /** Same title in the current list, preferring the block's specialty. */
-export function findLegacyCatalogMatch(topics: readonly CatalogTopic[], block: Pick<QuestionBlock, "title" | "specialty">) {
+export function findLegacyCatalogMatch(topics: readonly CatalogTopic[], block: Pick<QuestionBlock, "title" | "specialty"> & { canonical_topic_id?: string | null }) {
+  const sameTopic = block.canonical_topic_id ? topics.find(topic => topic.canonicalTopicId === block.canonical_topic_id) : null;
+  if (sameTopic) return sameTopic;
   const title = normalizeHeader(block.title);
   const candidates = topics.filter(topic => normalizeHeader(topic.title) === title);
   return candidates.find(topic => topic.specialty === block.specialty) ?? candidates[0] ?? null;
@@ -259,7 +307,7 @@ export function getCatalogTopics(topics: readonly CatalogTopic[], catalogArea: s
 export function searchCourseCatalog(topics: readonly CatalogTopic[], query: string, limit = 8) {
   const normalizedQuery = normalizeHeader(query);
   if (!normalizedQuery) return [];
-  return topics.filter(topic => [topic.title, topic.specialty, topic.majorArea, topic.catalogArea]
+  return topics.filter(topic => [topic.title, topic.specialty, topic.majorArea, topic.catalogArea, ...(topic.aliases ?? [])]
     .some(value => normalizeHeader(value).includes(normalizedQuery)))
     .slice(0, limit);
 }

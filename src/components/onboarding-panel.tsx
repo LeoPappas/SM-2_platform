@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { differenceInMonths } from "date-fns";
 import { Check, Minus, Plus } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
-import { loadCourseCatalogOptions, type CourseCatalogOption } from "@/lib/course-catalog";
+import { METAMED_TOPIC_TOTAL, loadCourseCatalogOptions, type CourseCatalogOption } from "@/lib/course-catalog";
 import type { CourseCatalogSource, StudentProfile } from "@/lib/database.types";
 import { planningToday } from "@/lib/planning-date";
 import { rebalanceAutomaticReviewSlots } from "@/lib/revision-actions";
@@ -112,7 +112,7 @@ export function OnboardingPanel({
     try {
       const normalizedInterests = examInterests.split(",").map(value => value.trim()).filter(Boolean);
       const topicTotal = catalogSource === "metamed"
-        ? 184
+        ? METAMED_TOPIC_TOTAL
         : courseOptions.find(option => option.id === catalogReleaseId)?.itemCount ?? profile?.course_theme_total ?? null;
       const { data, error: saveError } = await supabase
         .from("student_profiles")

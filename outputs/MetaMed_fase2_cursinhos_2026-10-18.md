@@ -27,10 +27,10 @@ Mesmo assim, o arquivo era grande demais para uma chamada do conector. O texto e
 ## O que mudou na plataforma
 
 - **Onboarding e Configurações:** novo passo "Qual cursinho você faz?" com quatro opções, sem descrições: Lista MetaMed, Medway, MedCof e Medcurso. O envio de lista própria em CSV saiu da tela. Trocar de cursinho vale para os próximos temas; os temas já registrados não mudam.
-- **Simulador:** a página e o item do menu foram retirados. A fórmula experimental continua em `src/lib/relevance-engine.ts` para a Fase 3.
+- **Simulador:** a página e o item do menu foram retirados. A fórmula da nota passou para o motor principal (`src/lib/revision-engine.ts`).
 - **Cadastro de tema:** grande área → especialidade → aula do cursinho, com busca por título, área e sinônimo (por exemplo, `ICC`). O aluno sempre escolhe o resultado; nada é associado sozinho.
 - **Vínculo com a aula:** o tema guarda `catalog_item_id`, a versão e a nota da publicação. O primeiro contato grava o mesmo vínculo.
-- **Importância:** vem da nota da aula (≥ 7,5 alta; ≤ 3,5 baixa; demais média) e já entra no motor atual. É o atalho 3.1 do plano.
+- **Importância:** vem da nota da aula (≥ 7,5 alta; ≤ 3,5 baixa; demais média). Substituído no mesmo dia pelo motor numérico: ver `MetaMed_relevancia_numerica_2026-10-18.md`.
 - **Tema próprio:** "Não encontrei meu tema" pede nome, uma das cinco grandes áreas, especialidade e importância (média por padrão). Enquanto o aluno digita, aparecem aulas parecidas com o botão "Usar esta aula".
 - **Temas antigos:** ao editar um tema sem vínculo, a plataforma procura a aula de mesmo título no cursinho escolhido e avisa que vai vinculá-la ao salvar. O único tema remoto ("Arritmias, Síncope e PCR") tem correspondência exata no Medway.
 - **Tema vinculado:** não pode trocar de aula, porque o banco trata esse vínculo como imutável. A tela explica isso e sugere excluir e registrar de novo.

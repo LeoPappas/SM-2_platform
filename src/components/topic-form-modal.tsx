@@ -25,6 +25,8 @@ import { findAutomaticReviewDate, importanceToLegacyWeight } from "@/lib/revisio
 import {
   ENGINE_VERSION,
   calculateAccuracy,
+  importanceFromRelevance,
+  relevanceFromImportance,
   calculateNextInterval,
   getCalculationMode,
   toLegacyGrade,
@@ -191,18 +193,25 @@ export function TopicFormModal({
         importance: customImportance,
         suggested_importance: null,
         source: CUSTOM_TOPIC_SOURCE,
+        canonical_topic_id: null,
+        engine_relevance: relevanceFromImportance(customImportance),
         catalog: null,
       };
     }
     if (!selectedTopic) throw new Error("Escolha um tema da lista.");
+    // The engine uses the score; the student sees the category derived from it.
+    const score = selectedTopic.relevanceScore ?? null;
+    const importance = score !== null ? importanceFromRelevance(score) : selectedTopic.suggestedImportance;
     return {
       title: selectedTopic.title.trim(),
       major_area: selectedTopic.majorArea,
       specialty: selectedTopic.specialty,
       area_name: selectedTopic.specialty,
-      importance: selectedTopic.suggestedImportance,
-      suggested_importance: selectedTopic.suggestedImportance,
+      importance,
+      suggested_importance: importance,
       source: selectedTopic.sourceLabel ?? block?.source ?? "MetaMed",
+      canonical_topic_id: selectedTopic.catalogItemId ? null : selectedTopic.canonicalTopicId ?? null,
+      engine_relevance: score ?? relevanceFromImportance(importance),
       catalog: selectedTopic.catalogItemId && selectedTopic.relevanceVersionId && selectedTopic.relevanceScore != null
         ? {
           catalog_item_id: selectedTopic.catalogItemId,
@@ -240,7 +249,7 @@ export function TopicFormModal({
       questionCount,
       correctCount,
       perceivedDifficulty: difficulty,
-      importance: topic.importance,
+      relevance: topic.engine_relevance,
       isFirstContact: true,
       reviewDate: studyDate,
       examDate: profile?.exam_date,
