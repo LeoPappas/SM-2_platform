@@ -69,6 +69,8 @@ export type CatalogTopic = {
   canonicalTopicIds?: string[];
   /** Relative queue effort proxy; currently the number of linked canonical topics. */
   workloadWeight?: number;
+  /** Where the topic came from, saved as the block source (e.g. "Medway · Extensivo R1 2026"). */
+  sourceLabel?: string;
 };
 
 export const REFERENCE_TOPICS: readonly CatalogTopic[] = [

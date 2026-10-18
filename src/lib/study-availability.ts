@@ -62,6 +62,40 @@ export function resolvePlanningWeek(
   };
 }
 
+export type RoutineAvailability = {
+  study_days: number[];
+  daily_theme_capacity: number;
+  daily_capacities?: Record<string, number> | null;
+  week_starts_on?: number | null;
+};
+export type AdjustableWeek = SavedPlanningWeek & {
+  study_days?: number[] | null;
+  daily_capacities?: Record<string, number> | null;
+};
+
+/** Availability of the planning week containing each date: a week's adjustment wins over the routine. */
+export function availabilityResolver(routine: RoutineAvailability, weeks: AdjustableWeek[] = []) {
+  return (date: string): StudyAvailability => {
+    const week = resolvePlanningWeek(date, routine.week_starts_on ?? 1, weeks);
+    const adjusted = weeks.find(item => item.week_start === week.weekStart);
+    return normalizeStudyAvailability({
+      studyDays: adjusted?.study_days ?? routine.study_days,
+      dailyCapacity: routine.daily_theme_capacity,
+      dailyCapacities: adjusted?.daily_capacities ?? routine.daily_capacities,
+    });
+  };
+}
+
+/** First day of the week with room for reviews, or the week start when the week is empty. */
+export function firstStudyDayOfWeek(weekStart: string, availability: StudyAvailabilityInput) {
+  const normalized = normalizeStudyAvailability(availability);
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = format(addDays(parseStudyDate(weekStart), offset), "yyyy-MM-dd");
+    if (normalized.dailyCapacities[String(getISODay(parseStudyDate(date)))] > 0) return date;
+  }
+  return weekStart;
+}
+
 export function studyCapacityForDate(date: string, availability: StudyAvailabilityInput) {
   const normalized = normalizeStudyAvailability(availability);
   return normalized.dailyCapacities[String(getISODay(parseStudyDate(date)))];

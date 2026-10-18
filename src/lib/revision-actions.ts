@@ -197,7 +197,8 @@ export async function findAutomaticReviewDate({
     supabase
       .from("question_blocks")
       .select("id,planned_review_date")
-      .eq("user_id", userId),
+      .eq("user_id", userId)
+      .is("archived_at", null),
   ]);
   if (profileError || blocksError || !profile) {
     throw new Error("Não foi possível localizar seus slots de estudo.");
@@ -248,7 +249,8 @@ export async function rebalanceAutomaticReviewSlots({
   const { data: blocks, error } = await supabase
     .from("question_blocks")
     .select("*")
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .is("archived_at", null);
   if (error) throw new Error("As configurações foram salvas, mas não foi possível reorganizar os estudos.");
   const { data: overrides, error: overrideError } = await supabase
     .from("weekly_plans").select("*").eq("user_id", userId);

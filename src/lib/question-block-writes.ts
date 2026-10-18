@@ -43,6 +43,16 @@ export async function persistAutomaticReviewSchedule({ block, userId, date, sour
   return { block: data };
 }
 
+/** Archived topics leave the plan and the calendar but keep their history; restoring brings them back. */
+export async function setQuestionBlockArchived({ block, userId, archived }: { block: QuestionBlock; userId: string; archived: boolean }) {
+  const { error } = await supabase
+    .from("question_blocks")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", block.id)
+    .eq("user_id", userId);
+  if (error) throw new Error(archived ? "Não foi possível arquivar o tema." : "Não foi possível restaurar o tema.");
+}
+
 export async function deleteQuestionBlock({ block, userId }: { block: QuestionBlock; userId: string }) {
   const { error } = await supabase
     .from("question_blocks")

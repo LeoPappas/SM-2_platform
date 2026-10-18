@@ -44,7 +44,7 @@ describe("WeeklyAvailabilityModal", () => {
     fireEvent.change(dayInput("terça-feira"), { target: { value: "3" } });
     fireEvent.change(dayInput("sexta-feira"), { target: { value: "0" } });
     expect(screen.getByText("7 revisões")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: /Salvar esta semana/ }));
+    await user.click(screen.getByRole("button", { name: /Salvar a semana/ }));
 
     await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
     expect(api.rpc).toHaveBeenCalledWith("save_weekly_availability", {
@@ -84,7 +84,7 @@ describe("WeeklyAvailabilityModal", () => {
     const user = userEvent.setup();
     api.rpc.mockResolvedValueOnce({ data: null, error: { message: "Closed weeks cannot change" } });
     const props = renderModal();
-    await user.click(screen.getByRole("button", { name: /Salvar esta semana/ }));
+    await user.click(screen.getByRole("button", { name: /Salvar a semana/ }));
     expect((await screen.findByRole("alert")).textContent).toBe("Não foi possível salvar a disponibilidade desta semana.");
     expect(props.onClose).not.toHaveBeenCalled();
     expect(props.onSaved).not.toHaveBeenCalled();
@@ -93,9 +93,9 @@ describe("WeeklyAvailabilityModal", () => {
   it("tells the student the week was saved when only the refresh fails", async () => {
     const user = userEvent.setup();
     renderModal({ onSaved: vi.fn().mockRejectedValue(new Error("offline")) });
-    await user.click(screen.getByRole("button", { name: /Salvar esta semana/ }));
+    await user.click(screen.getByRole("button", { name: /Salvar a semana/ }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/A disponibilidade foi salva/);
     expect(screen.queryByRole("button", { name: "Cancelar" })).toBeNull();
-    expect((screen.getByRole("button", { name: /Salvar esta semana/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /Salvar a semana/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

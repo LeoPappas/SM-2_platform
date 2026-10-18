@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { differenceInMonths } from "date-fns";
-import { Check, FileUp, Minus, Plus } from "lucide-react";
+import { Check, Minus, Plus } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
-import { readCatalogFile, replaceUploadedCatalog, type ParsedCourseTopic } from "@/lib/course-catalog";
+import { loadCourseCatalogOptions, type CourseCatalogOption } from "@/lib/course-catalog";
 import type { CourseCatalogSource, StudentProfile } from "@/lib/database.types";
 import { planningToday } from "@/lib/planning-date";
 import { rebalanceAutomaticReviewSlots } from "@/lib/revision-actions";
@@ -42,9 +42,13 @@ export function OnboardingPanel({
   ));
   const [weekStartsOn, setWeekStartsOn] = useState(profile?.week_starts_on ?? 1);
   const [timezone, setTimezone] = useState(profile?.timezone ?? "America/Sao_Paulo");
-  const [catalogSource, setCatalogSource] = useState<CourseCatalogSource>(profile?.course_catalog_source ?? "metamed");
-  const [catalogFilename, setCatalogFilename] = useState(profile?.course_catalog_filename ?? "");
-  const [uploadedTopics, setUploadedTopics] = useState<ParsedCourseTopic[] | null>(null);
+  // Only the MetaMed list and the course catalogs are offered; an old uploaded list must pick one of them.
+  const [catalogSource, setCatalogSource] = useState<CourseCatalogSource | null>(
+    profile?.course_catalog_source === "upload" ? null : profile?.course_catalog_source ?? null,
+  );
+  const [catalogReleaseId, setCatalogReleaseId] = useState<string | null>(profile?.course_catalog_release_id ?? null);
+  const [courseOptions, setCourseOptions] = useState<CourseCatalogOption[]>([]);
+  const [coursesError, setCoursesError] = useState<string | null>(null);
   const [birthDate, setBirthDate] = useState(profile?.birth_date ?? "");
   const [examInterests, setExamInterests] = useState(profile?.exam_interests?.join(", ") ?? "");
   const [city, setCity] = useState(profile?.city ?? "");
@@ -62,6 +66,19 @@ export function OnboardingPanel({
   const horizonMonths = useMemo(() => examDate
     ? Math.max(1, differenceInMonths(new Date(`${examDate}T12:00:00`), new Date(`${preparationStart}T12:00:00`)))
     : 12, [examDate, preparationStart]);
+
+  useEffect(() => {
+    let active = true;
+    loadCourseCatalogOptions()
+      .then(options => { if (active) setCourseOptions(options); })
+      .catch(() => { if (active) setCoursesError("Não foi possível carregar os cursinhos."); });
+    return () => { active = false; };
+  }, []);
+
+  const chooseCourse = (releaseId: string | null) => {
+    setCatalogSource(releaseId ? "course" : "metamed");
+    setCatalogReleaseId(releaseId);
+  };
 
   const toggleDay = (day: number) => {
     const selected = studyDays.includes(day);
@@ -81,27 +98,11 @@ export function OnboardingPanel({
     }
   };
 
-  const chooseFile = async (file?: File) => {
-    if (!file) return;
-    setError(null);
-    try {
-      const parsed = await readCatalogFile(file);
-      if (parsed.length === 0) throw new Error("Nenhum tema foi encontrado no arquivo.");
-      setUploadedTopics(parsed);
-      setCatalogFilename(file.name);
-      setCatalogSource("upload");
-    } catch (cause) {
-      setUploadedTopics(null);
-      setCatalogFilename("");
-      setError(cause instanceof Error ? cause.message : "Não foi possível ler o arquivo.");
-    }
-  };
-
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!preferredName.trim() || !examDate || studyDays.length === 0) return;
-    if (catalogSource === "upload" && !uploadedTopics && !profile?.course_catalog_filename) {
-      setError("Escolha a lista de temas do seu cursinho.");
+    if (!catalogSource || (catalogSource === "course" && !catalogReleaseId)) {
+      setError("Escolha o seu cursinho.");
       return;
     }
     setSubmitting(true);
@@ -109,12 +110,10 @@ export function OnboardingPanel({
     setSavedMessage(null);
 
     try {
-      if (catalogSource === "upload" && uploadedTopics) {
-        await replaceUploadedCatalog({ filename: catalogFilename, topics: uploadedTopics });
-      }
-
       const normalizedInterests = examInterests.split(",").map(value => value.trim()).filter(Boolean);
-      const topicTotal = catalogSource === "metamed" ? 184 : uploadedTopics?.length ?? profile?.course_theme_total ?? null;
+      const topicTotal = catalogSource === "metamed"
+        ? 184
+        : courseOptions.find(option => option.id === catalogReleaseId)?.itemCount ?? profile?.course_theme_total ?? null;
       const { data, error: saveError } = await supabase
         .from("student_profiles")
         .upsert({
@@ -134,7 +133,8 @@ export function OnboardingPanel({
           preparation_horizon_months: horizonMonths,
           course_theme_total: topicTotal,
           course_catalog_source: catalogSource,
-          course_catalog_filename: catalogSource === "upload" ? catalogFilename : null,
+          course_catalog_filename: null,
+          course_catalog_release_id: catalogSource === "course" ? catalogReleaseId : null,
           birth_date: birthDate || null,
           exam_interests: normalizedInterests,
           city: city.trim() || null,
@@ -241,18 +241,19 @@ export function OnboardingPanel({
           </label>
         </FormSection>
 
-        <FormSection title="Qual lista de temas você quer usar?">
+        <FormSection title="Qual cursinho você faz?">
           <div className="grid max-w-3xl gap-3 sm:grid-cols-2">
-            <Choice selected={catalogSource === "metamed"} onClick={() => setCatalogSource("metamed")} title={<>Lista <BrandName /></>} description="184 aulas do Extensivo R1 2026." />
-            <Choice selected={catalogSource === "upload"} onClick={() => setCatalogSource("upload")} title="Lista do meu cursinho" description="Envie um CSV, TSV ou TXT." />
+            <Choice selected={catalogSource === "metamed"} onClick={() => chooseCourse(null)} title={<>Lista <BrandName /></>} />
+            {courseOptions.map(option => (
+              <Choice
+                key={option.id}
+                selected={catalogSource === "course" && catalogReleaseId === option.id}
+                onClick={() => chooseCourse(option.id)}
+                title={option.label}
+              />
+            ))}
           </div>
-          {catalogSource === "upload" && (
-            <label className="mt-4 flex max-w-3xl cursor-pointer items-center justify-between gap-4 rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-4 transition-colors hover:border-blue-700 hover:bg-blue-50">
-              <span className="flex min-w-0 items-center gap-3"><FileUp size={19} className="shrink-0 text-blue-700" /><span className="truncate text-sm font-medium text-gray-700">{catalogFilename || "Escolher arquivo"}</span></span>
-              <span className="shrink-0 text-xs font-semibold text-blue-700">{uploadedTopics ? `${uploadedTopics.length} temas` : "Procurar"}</span>
-              <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={event => chooseFile(event.target.files?.[0])} className="sr-only" />
-            </label>
-          )}
+          {coursesError && <p className="mt-3 max-w-3xl text-sm text-amber-800">{coursesError}</p>}
         </FormSection>
 
         <FormSection title="Para te conhecer melhor" description="Estas informações são opcionais.">
@@ -288,8 +289,8 @@ function FormSection({ title, description, children }: { title: string; descript
   return <section className="max-w-4xl border-b border-gray-200 pb-10 last:border-0"><h2 className="text-base font-semibold text-gray-900">{title}</h2>{description && <p className="mt-1 text-sm leading-6 text-gray-500">{description}</p>}<div className="mt-4">{children}</div></section>;
 }
 
-function Choice({ selected, onClick, title, description }: { selected: boolean; onClick: () => void; title: React.ReactNode; description: string }) {
-  return <button type="button" onClick={onClick} aria-pressed={selected} className={`flex min-h-24 items-start gap-3 rounded-md border p-4 text-left transition-colors ${selected ? "border-blue-700 bg-blue-50" : "border-gray-300 bg-white hover:bg-gray-100"}`}><span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-700 bg-blue-700 text-white" : "border-gray-300"}`}>{selected && <Check size={12} />}</span><span><span className="block text-sm font-semibold text-gray-900">{title}</span><span className="mt-1 block text-xs leading-5 text-gray-500">{description}</span></span></button>;
+function Choice({ selected, onClick, title }: { selected: boolean; onClick: () => void; title: React.ReactNode }) {
+  return <button type="button" onClick={onClick} aria-pressed={selected} className={`flex min-h-14 items-center gap-3 rounded-md border px-4 py-3 text-left transition-colors ${selected ? "border-blue-700 bg-blue-50" : "border-gray-300 bg-white hover:bg-gray-100"}`}><span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? "border-blue-700 bg-blue-700 text-white" : "border-gray-300"}`}>{selected && <Check size={12} />}</span><span className="text-sm font-semibold text-gray-900">{title}</span></button>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

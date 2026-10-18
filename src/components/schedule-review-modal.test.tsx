@@ -12,6 +12,9 @@ vi.mock("@/lib/revision-actions", () => ({
 
 import { ScheduleReviewModal } from "./schedule-review-modal";
 
+/** Monday, Wednesday and Friday have one slot each. */
+const routineCapacity = (date: string) => [1, 3, 5].includes(new Date(`${date}T12:00:00`).getDay()) ? 1 : 0;
+
 function renderModal(overrides: Partial<Parameters<typeof ScheduleReviewModal>[0]> = {}) {
   const props = {
     block: questionBlockFixture(),
@@ -46,7 +49,7 @@ describe("ScheduleReviewModal", () => {
 
   it("saves the chosen day, refreshes the plan and closes", async () => {
     const user = userEvent.setup();
-    const props = renderModal({ minDate: "2026-10-12", maxDate: "2026-10-18", studyDays: [1, 3, 5] });
+    const props = renderModal({ minDate: "2026-10-12", maxDate: "2026-10-18", capacityForDate: routineCapacity });
     await user.click(screen.getByRole("button", { name: /qua.*14/i }));
     expect(dateInput().value).toBe("2026-10-14");
     await user.click(screen.getByRole("button", { name: "Agendar" }));
@@ -55,14 +58,14 @@ describe("ScheduleReviewModal", () => {
     expect(props.onChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("only offers routine days as shortcuts and warns about other days", async () => {
+  it("only offers days with room as shortcuts and warns about other days", async () => {
     const user = userEvent.setup();
-    renderModal({ minDate: "2026-10-12", maxDate: "2026-10-18", studyDays: [1, 3, 5] });
+    renderModal({ minDate: "2026-10-12", maxDate: "2026-10-18", capacityForDate: routineCapacity });
     expect(screen.getAllByRole("button", { name: /\d{2}/ })).toHaveLength(3);
     // 2026-10-15 is a Thursday, outside the Monday/Wednesday/Friday routine.
-    expect(screen.getByText(/fora da sua rotina/)).toBeTruthy();
+    expect(screen.getByText(/fora da sua disponibilidade/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: /qua.*14/i }));
-    expect(screen.queryByText(/fora da sua rotina/)).toBeNull();
+    expect(screen.queryByText(/fora da sua disponibilidade/)).toBeNull();
   });
 
   it("keeps the dialog open and explains a failed save", async () => {

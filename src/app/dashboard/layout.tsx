@@ -11,7 +11,6 @@ import {
   Home,
   LogOut,
   Settings2,
-  SlidersHorizontal,
 } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
 import { clearLegacyGoogleTokens } from "@/lib/legacy-google-token-cleanup";
@@ -22,7 +21,6 @@ const navItems = [
   { href: "/dashboard/blocos", label: "Temas", icon: BookOpenCheck },
   { href: "/dashboard/calendario", label: "Calendário", icon: CalendarDays },
   { href: "/dashboard/metricas", label: "Desempenho", icon: BarChart3 },
-  { href: "/dashboard/simulador", label: "Simulador", icon: SlidersHorizontal },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

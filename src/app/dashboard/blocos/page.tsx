@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
+  Archive,
+  ArchiveRestore,
   BookOpenCheck,
   History,
   Pencil,
@@ -12,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { TopicFormModal } from "@/components/topic-form-modal";
-import { deleteQuestionBlock } from "@/lib/question-block-writes";
+import { deleteQuestionBlock, setQuestionBlockArchived } from "@/lib/question-block-writes";
 import type { BlockReview, MajorArea, QuestionBlock, StudentProfile } from "@/lib/database.types";
 import { MAJOR_AREAS } from "@/lib/medical-catalog";
 import { supabase } from "@/lib/supabase";
@@ -30,6 +32,9 @@ export default function TemasPage() {
   const [historyBlock, setHistoryBlock] = useState<QuestionBlock | null>(null);
   const [history, setHistory] = useState<BlockReview[]>([]);
   const [deleteBlock, setDeleteBlock] = useState<QuestionBlock | null>(null);
+  const [archiveBlock, setArchiveBlock] = useState<QuestionBlock | null>(null);
+  const [view, setView] = useState<"active" | "archived">("active");
+  const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const loadData = useCallback(async (userId: string) => {
@@ -72,12 +77,13 @@ export default function TemasPage() {
   const filteredBlocks = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
     return blocks.filter(block => {
+      if ((view === "archived") !== Boolean(block.archived_at)) return false;
       const matchesArea = areaFilter === "todas" || block.major_area === areaFilter;
       const matchesQuery = !normalizedQuery || [block.title, block.specialty, block.source ?? ""]
         .some(value => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery));
       return matchesArea && matchesQuery;
     });
-  }, [areaFilter, blocks, query]);
+  }, [areaFilter, blocks, query, view]);
 
   const openHistory = async (block: QuestionBlock) => {
     setHistoryBlock(block);
@@ -94,6 +100,7 @@ export default function TemasPage() {
     if (!session || !deleteBlock) return;
     setSubmitting(true);
     setError(null);
+    setNotice(null);
 
     try {
       await deleteQuestionBlock({ block: deleteBlock, userId: session.user.id });
@@ -105,9 +112,29 @@ export default function TemasPage() {
     setSubmitting(false);
   };
 
+  const changeArchived = async (block: QuestionBlock, archived: boolean) => {
+    if (!session) return;
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await setQuestionBlockArchived({ block, userId: session.user.id, archived });
+      await loadData(session.user.id);
+      setNotice(archived
+        ? `${block.title} foi arquivado. Ele está em "Arquivados" e pode ser restaurado.`
+        : `${block.title} voltou para o planejamento.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o tema.");
+    }
+    setArchiveBlock(null);
+    setSubmitting(false);
+  };
+
   if (loading) return <LoadingState />;
 
   const legacyCount = blocks.filter(block => block.major_area === "A classificar").length;
+  const activeCount = blocks.filter(block => !block.archived_at).length;
+  const archivedCount = blocks.length - activeCount;
 
   return (
     <div className="page-shell">
@@ -117,17 +144,26 @@ export default function TemasPage() {
           <button type="button" onClick={() => setError(null)} className="icon-button"><X size={16} /></button>
         </div>
       )}
+      {notice && <div role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
 
       <header className="page-header">
         <div>
           <h1 className="page-title">
-            Temas estudados <span className="ml-2 align-middle text-base font-semibold text-blue-700">{blocks.length}</span>
+            Temas estudados <span className="ml-2 align-middle text-base font-semibold text-blue-700">{activeCount}</span>
           </h1>
         </div>
         <button type="button" onClick={() => setFormBlock("new")} className="button-primary">
           <Plus size={16} /> Novo tema
         </button>
       </header>
+
+      {(archivedCount > 0 || view === "archived") && (
+        <div className="mb-4 flex w-fit gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-xs" aria-label="Temas exibidos">
+          {([["active", `Ativos · ${activeCount}`], ["archived", `Arquivados · ${archivedCount}`]] as const).map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`rounded-[6px] px-3 py-2 text-xs font-semibold transition-colors ${view === value ? "bg-blue-700 text-white" : "text-gray-600 hover:bg-gray-100"}`}>{label}</button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="relative flex-1">
@@ -144,15 +180,15 @@ export default function TemasPage() {
       {filteredBlocks.length === 0 ? (
         <div className="empty-state">
           <BookOpenCheck size={24} />
-          <p>{blocks.length === 0 ? "Cadastre o primeiro tema que você já estudou." : "Nenhum tema corresponde aos filtros."}</p>
-          {blocks.length === 0 && <button type="button" onClick={() => setFormBlock("new")} className="button-secondary"><Plus size={15} /> Novo tema</button>}
+          <p>{view === "archived" ? "Nenhum tema arquivado corresponde aos filtros." : activeCount === 0 ? "Cadastre o primeiro tema que você já estudou." : "Nenhum tema corresponde aos filtros."}</p>
+          {view === "active" && activeCount === 0 && <button type="button" onClick={() => setFormBlock("new")} className="button-secondary"><Plus size={15} /> Novo tema</button>}
         </div>
       ) : (
         <div className="overflow-hidden card">
           <div className="hidden grid-cols-[minmax(18rem,1fr)_10rem_11rem_8rem] border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-500 lg:grid">
             <span>Tema</span>
             <span>Número de contatos</span>
-            <span>Próxima revisão</span>
+            <span>{view === "archived" ? "Arquivado em" : "Próxima revisão"}</span>
             <span className="text-right">Ações</span>
           </div>
           <div className="divide-y divide-gray-100">
@@ -163,7 +199,10 @@ export default function TemasPage() {
                 reviewCount={reviewCounts[block.id] ?? 0}
                 onEdit={() => setFormBlock(block)}
                 onHistory={() => openHistory(block)}
+                onArchive={() => setArchiveBlock(block)}
+                onRestore={() => void changeArchived(block, false)}
                 onDelete={() => setDeleteBlock(block)}
+                busy={submitting}
               />
             ))}
           </div>
@@ -187,6 +226,10 @@ export default function TemasPage() {
         }} />
       )}
 
+      {archiveBlock && (
+        <ConfirmArchive block={archiveBlock} submitting={submitting} onCancel={() => setArchiveBlock(null)} onConfirm={() => void changeArchived(archiveBlock, true)} />
+      )}
+
       {deleteBlock && (
         <ConfirmDelete block={deleteBlock} submitting={submitting} onCancel={() => setDeleteBlock(null)} onConfirm={confirmDelete} />
       )}
@@ -199,13 +242,19 @@ function TopicRow({
   reviewCount,
   onEdit,
   onHistory,
+  onArchive,
+  onRestore,
   onDelete,
+  busy,
 }: {
   block: QuestionBlock;
   reviewCount: number;
   onEdit: () => void;
   onHistory: () => void;
+  onArchive: () => void;
+  onRestore: () => void;
   onDelete: () => void;
+  busy: boolean;
 }) {
   const contactCount = reviewCount + 1;
 
@@ -223,12 +272,17 @@ function TopicRow({
         <span className="text-xs text-gray-500">{contactCount === 1 ? "contato" : "contatos"}</span>
       </div>
       <div className="text-sm font-medium text-gray-700">
-        {formatDate(block.next_review_date)}
+        {block.archived_at ? formatDate(block.archived_at.slice(0, 10)) : formatDate(block.next_review_date)}
       </div>
       <div className="flex justify-start gap-1 lg:justify-end">
         <ActionButton label="Histórico" onClick={onHistory}><History size={15} /></ActionButton>
-        <ActionButton label="Editar" onClick={onEdit}><Pencil size={15} /></ActionButton>
-        <ActionButton label="Excluir" onClick={onDelete} danger><Trash2 size={15} /></ActionButton>
+        {block.archived_at ? <>
+          <ActionButton label="Restaurar" onClick={onRestore} disabled={busy}><ArchiveRestore size={15} /></ActionButton>
+          <ActionButton label="Excluir definitivamente" onClick={onDelete} danger><Trash2 size={15} /></ActionButton>
+        </> : <>
+          <ActionButton label="Editar" onClick={onEdit}><Pencil size={15} /></ActionButton>
+          <ActionButton label="Arquivar" onClick={onArchive}><Archive size={15} /></ActionButton>
+        </>}
       </div>
     </div>
   );
@@ -281,17 +335,17 @@ function HistoryModal({ block, history, onClose }: { block: QuestionBlock; histo
   );
 }
 
-function ConfirmDelete({ block, submitting, onCancel, onConfirm }: { block: QuestionBlock; submitting: boolean; onCancel: () => void; onConfirm: () => void }) {
+function ConfirmArchive({ block, submitting, onCancel, onConfirm }: { block: QuestionBlock; submitting: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
-    <div className="dashboard-modal-overlay" role="dialog" aria-modal="true">
+    <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-label={`Arquivar ${block.title}`}>
       <div className="modal-panel w-full max-w-sm p-6">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-50 text-red-700"><Trash2 size={19} /></div>
-        <h2 className="mt-4 text-lg font-semibold text-gray-900">Excluir {block.title}?</h2>
-        <p className="mt-2 text-sm leading-6 text-gray-600">O histórico de revisões também será removido. Esta ação não pode ser desfeita.</p>
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-gray-100 text-gray-700"><Archive size={19} /></div>
+        <h2 className="mt-4 text-lg font-semibold text-gray-900">Arquivar {block.title}?</h2>
+        <p className="mt-2 text-sm leading-6 text-gray-600">O tema sai do planejamento e do calendário. O histórico de revisões continua guardado, e você pode restaurá-lo quando quiser.</p>
         <div className="mt-6 flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="button-secondary">Cancelar</button>
-          <button type="button" onClick={onConfirm} disabled={submitting} className="button-danger">
-            <Trash2 size={15} /> {submitting ? "Excluindo..." : "Excluir tema"}
+          <button type="button" onClick={onConfirm} disabled={submitting} className="button-primary">
+            <Archive size={15} /> {submitting ? "Arquivando..." : "Arquivar tema"}
           </button>
         </div>
       </div>
@@ -299,9 +353,27 @@ function ConfirmDelete({ block, submitting, onCancel, onConfirm }: { block: Ques
   );
 }
 
-function ActionButton({ label, onClick, danger, children }: { label: string; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
+function ConfirmDelete({ block, submitting, onCancel, onConfirm }: { block: QuestionBlock; submitting: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
-    <button type="button" onClick={onClick} title={label} aria-label={label} className={`icon-button ${danger ? "hover:bg-red-50 hover:text-red-700" : ""}`}>
+    <div className="dashboard-modal-overlay" role="dialog" aria-modal="true">
+      <div className="modal-panel w-full max-w-sm p-6">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-red-50 text-red-700"><Trash2 size={19} /></div>
+        <h2 className="mt-4 text-lg font-semibold text-gray-900">Excluir {block.title} definitivamente?</h2>
+        <p className="mt-2 text-sm leading-6 text-gray-600">O tema e todo o histórico de revisões serão apagados. Esta ação não pode ser desfeita.</p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} className="button-secondary">Cancelar</button>
+          <button type="button" onClick={onConfirm} disabled={submitting} className="button-danger">
+            <Trash2 size={15} /> {submitting ? "Excluindo..." : "Excluir definitivamente"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionButton({ label, onClick, danger, disabled, children }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={`icon-button ${danger ? "hover:bg-red-50 hover:text-red-700" : ""}`}>
       {children}
     </button>
   );
