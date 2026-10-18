@@ -1,4 +1,4 @@
-import type { CourseCatalogSource, MajorArea, StudentProfile } from "./database.types";
+import type { CourseCatalogSource, Database, MajorArea, QuestionBlock, StudentProfile } from "./database.types";
 import type { CatalogTopic } from "./medical-catalog";
 
 export type ParsedCourseTopic = {
@@ -69,8 +69,102 @@ export async function replaceUploadedCatalog({
   if (error || data !== topics.length) throw new Error("Não foi possível importar a lista de temas.");
 }
 
+type CatalogSuggestion = Database["public"]["Functions"]["get_catalog_suggestions"]["Returns"][number];
+
+export type CourseCatalogOption = {
+  id: string;
+  providerCode: string;
+  label: string;
+  releaseName: string;
+  itemCount: number | null;
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  medway: "Medway",
+  medcof: "MedCof",
+  medgrupo: "Medcurso (MedGrupo)",
+};
+const PROVIDER_ORDER = ["medway", "medcof", "medgrupo"];
+const CATALOG_PAGE_SIZE = 500;
+export const CUSTOM_TOPIC_SOURCE = "Tema próprio";
+
+export function courseProviderLabel(providerCode: string, providerName: string) {
+  return PROVIDER_LABELS[providerCode] ?? providerName;
+}
+
+/** Active course catalogs a student can choose, with their lesson counts. */
+export async function loadCourseCatalogOptions(): Promise<CourseCatalogOption[]> {
+  const { supabase } = await import("./supabase");
+  const { data, error } = await supabase
+    .from("course_catalog_releases")
+    .select("id,provider_code,provider_name,release_name")
+    .eq("status", "active");
+  if (error) throw new Error("Não foi possível carregar a lista de cursinhos.");
+  const releases = data ?? [];
+  const counts = await Promise.all(releases.map(async release => {
+    const { count } = await supabase
+      .from("course_catalog_items")
+      .select("id", { count: "exact", head: true })
+      .eq("release_id", release.id);
+    return count ?? null;
+  }));
+  return releases
+    .map((release, index) => ({
+      id: release.id,
+      providerCode: release.provider_code,
+      label: courseProviderLabel(release.provider_code, release.provider_name),
+      releaseName: release.release_name,
+      itemCount: counts[index],
+    }))
+    .sort((a, b) => providerRank(a.providerCode) - providerRank(b.providerCode));
+}
+
+export function fromCatalogSuggestion(item: CatalogSuggestion, sourceLabel: string): CatalogTopic {
+  return {
+    title: item.title,
+    catalogArea: item.catalog_area,
+    majorArea: item.major_area,
+    specialty: item.specialty,
+    suggestedImportance: item.suggested_importance,
+    catalogItemId: item.catalog_item_id,
+    externalItemId: item.external_id,
+    relevanceScore: Number(item.effective_score),
+    relevanceVersionId: item.relevance_version_id,
+    canonicalTopicIds: item.topic_ids,
+    workloadWeight: item.workload_weight,
+    sourceLabel,
+  };
+}
+
+async function loadCourseRelease(releaseId: string): Promise<CatalogTopic[]> {
+  const { supabase } = await import("./supabase");
+  const { data: release } = await supabase
+    .from("course_catalog_releases")
+    .select("provider_code,provider_name,release_name")
+    .eq("id", releaseId)
+    .maybeSingle();
+  const sourceLabel = release
+    ? `${courseProviderLabel(release.provider_code, release.provider_name)} · ${release.release_name}`
+    : "Lista do cursinho";
+  const items: CatalogSuggestion[] = [];
+  for (let offset = 0; ; offset += CATALOG_PAGE_SIZE) {
+    const { data, error } = await supabase.rpc("get_catalog_suggestions", {
+      p_release_id: releaseId,
+      p_limit: CATALOG_PAGE_SIZE,
+      p_offset: offset,
+    });
+    if (error) throw new Error("Não foi possível carregar a lista de temas do seu cursinho.");
+    items.push(...(data ?? []));
+    if ((data ?? []).length < CATALOG_PAGE_SIZE) break;
+  }
+  return items.map(item => fromCatalogSuggestion(item, sourceLabel));
+}
+
 export async function loadCatalogSuggestions(userId: string, profile?: StudentProfile | null): Promise<CatalogTopic[]> {
   const source: CourseCatalogSource = profile?.course_catalog_source ?? "metamed";
+  if (source === "course" && profile?.course_catalog_release_id) {
+    return loadCourseRelease(profile.course_catalog_release_id);
+  }
   const { supabase } = await import("./supabase");
   if (source === "upload") {
     const { data, error } = await supabase
@@ -79,13 +173,14 @@ export async function loadCatalogSuggestions(userId: string, profile?: StudentPr
       .eq("user_id", userId)
       .order("source_order");
     if (error) throw new Error("Não foi possível carregar a lista de temas do seu cursinho.");
+    const sourceLabel = profile?.course_catalog_filename || "Lista do cursinho";
     return (data ?? []).map(topic => toCatalogTopic({
       sourceOrder: topic.source_order,
       originalArea: topic.original_area,
       majorArea: topic.major_area,
       specialty: topic.specialty,
       title: topic.title,
-    }));
+    }, sourceLabel));
   }
 
   const { data, error } = await supabase
@@ -99,7 +194,56 @@ export async function loadCatalogSuggestions(userId: string, profile?: StudentPr
     majorArea: topic.major_area,
     specialty: topic.specialty,
     title: topic.title,
-  }));
+  }, "MetaMed"));
+}
+
+/** Topics are told apart by catalog identity; lists without one use the title. */
+export function topicKey(topic: CatalogTopic) {
+  return topic.catalogItemId ?? topic.title;
+}
+
+/**
+ * Title and area matches from the loaded list, followed by synonym matches the
+ * database finds in the student's course catalog. The student always picks one.
+ */
+export async function findCatalogMatches({
+  topics,
+  query,
+  releaseId,
+  limit = 8,
+}: {
+  topics: readonly CatalogTopic[];
+  query: string;
+  releaseId?: string | null;
+  limit?: number;
+}): Promise<CatalogTopic[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+  const local = searchCourseCatalog(topics, trimmed, limit);
+  if (!releaseId || local.length >= limit) return local;
+  const { supabase } = await import("./supabase");
+  const { data, error } = await supabase.rpc("get_catalog_suggestions", {
+    p_release_id: releaseId,
+    p_search: trimmed,
+    p_limit: limit,
+    p_offset: 0,
+  });
+  if (error) throw new Error("Não foi possível buscar temas.");
+  const byId = new Map(topics.map(topic => [topic.catalogItemId, topic]));
+  const remote = (data ?? []).flatMap(item => byId.get(item.catalog_item_id) ?? []);
+  const seen = new Set<string>();
+  return [...local, ...remote].filter(topic => {
+    if (seen.has(topicKey(topic))) return false;
+    seen.add(topicKey(topic));
+    return true;
+  }).slice(0, limit);
+}
+
+/** Same title in the current list, preferring the block's specialty. */
+export function findLegacyCatalogMatch(topics: readonly CatalogTopic[], block: Pick<QuestionBlock, "title" | "specialty">) {
+  const title = normalizeHeader(block.title);
+  const candidates = topics.filter(topic => normalizeHeader(topic.title) === title);
+  return candidates.find(topic => topic.specialty === block.specialty) ?? candidates[0] ?? null;
 }
 
 export function getCatalogAreas(topics: readonly CatalogTopic[]) {
@@ -117,19 +261,25 @@ export function getCatalogTopics(topics: readonly CatalogTopic[], catalogArea: s
 export function searchCourseCatalog(topics: readonly CatalogTopic[], query: string, limit = 8) {
   const normalizedQuery = normalizeHeader(query);
   if (!normalizedQuery) return [];
-  return topics.filter(topic => [topic.title, topic.specialty, topic.majorArea]
+  return topics.filter(topic => [topic.title, topic.specialty, topic.majorArea, topic.catalogArea]
     .some(value => normalizeHeader(value).includes(normalizedQuery)))
     .slice(0, limit);
 }
 
-function toCatalogTopic(topic: ParsedCourseTopic): CatalogTopic {
+function toCatalogTopic(topic: ParsedCourseTopic, sourceLabel: string): CatalogTopic {
   return {
     title: topic.title,
     catalogArea: topic.originalArea || topic.majorArea,
     majorArea: topic.majorArea,
     specialty: topic.specialty,
     suggestedImportance: "media",
+    sourceLabel,
   };
+}
+
+function providerRank(providerCode: string) {
+  const rank = PROVIDER_ORDER.indexOf(providerCode);
+  return rank === -1 ? PROVIDER_ORDER.length : rank;
 }
 
 function unique(values: readonly string[]) {

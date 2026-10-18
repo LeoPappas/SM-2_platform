@@ -7,6 +7,7 @@ import { questionBlockFixture } from "./test-fixtures";
 
 const mocks = vi.hoisted(() => ({
   loadSuggestions: vi.fn(),
+  findMatches: vi.fn(),
   findDate: vi.fn(),
   updateBlock: vi.fn(),
   inserts: [] as Array<{ table: string; row: Record<string, unknown> }>,
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/course-catalog", async importOriginal => ({
   ...(await importOriginal<typeof import("@/lib/course-catalog")>()),
   loadCatalogSuggestions: mocks.loadSuggestions,
+  findCatalogMatches: mocks.findMatches,
 }));
 vi.mock("@/lib/revision-actions", async importOriginal => ({
   ...(await importOriginal<typeof import("@/lib/revision-actions")>()),
@@ -52,6 +54,14 @@ const catalog: CatalogTopic[] = [
   { title: "Apendicite", catalogArea: "Cirurgia", majorArea: "Cirurgia", specialty: "Cirurgia Geral", suggestedImportance: "alta" },
 ];
 
+const medway = { relevanceVersionId: "publication-v3", sourceLabel: "Medway · Extensivo R1 2026" };
+const courseCatalog: CatalogTopic[] = [
+  { ...medway, title: "Insuficiência Cardíaca", catalogArea: "Clínica Médica", majorArea: "Clínica Médica", specialty: "Cardiologia", suggestedImportance: "alta", catalogItemId: "item-ic", relevanceScore: 8.4 },
+  { ...medway, title: "Arritmias, Síncope e PCR", catalogArea: "Clínica Médica", majorArea: "Clínica Médica", specialty: "Cardiologia", suggestedImportance: "media", catalogItemId: "item-arr", relevanceScore: 7.1 },
+  { ...medway, title: "Apendicite", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia", specialty: "Cirurgia Geral", suggestedImportance: "media", catalogItemId: "item-ap", relevanceScore: 6.5 },
+];
+const courseProfile = { exam_date: "2027-03-01", course_catalog_source: "course", course_catalog_release_id: "release-medway" } as never;
+
 function renderModal(overrides: Partial<Parameters<typeof TopicFormModal>[0]> = {}) {
   const props = { userId: "student-1", onClose: vi.fn(), onSaved: vi.fn(), ...overrides };
   render(<TopicFormModal {...props} />);
@@ -65,6 +75,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-11T15:00:00Z"));
   mocks.loadSuggestions.mockReset().mockResolvedValue(catalog);
+  mocks.findMatches.mockReset().mockResolvedValue([]);
   mocks.findDate.mockReset().mockResolvedValue("2026-10-20");
   mocks.updateBlock.mockReset().mockResolvedValue(undefined);
   mocks.inserts.length = 0;
@@ -156,6 +167,102 @@ describe("TopicFormModal", () => {
     renderModal();
     expect(await screen.findByText("Não foi possível carregar a lista de temas.")).toBeTruthy();
     expect(submitButton("Registrar tema").disabled).toBe(true);
+  });
+
+  it("registers a course lesson with its catalog identity and suggested importance", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue(courseCatalog);
+    renderModal({ profile: courseProfile });
+    await waitFor(() => expect(select("Tema").value).toBe("item-ic"));
+    await user.click(submitButton("Registrar tema"));
+
+    await waitFor(() => expect(mocks.inserts).toHaveLength(2));
+    expect(mocks.inserts[0].row).toMatchObject({
+      title: "Insuficiência Cardíaca", source: "Medway · Extensivo R1 2026", importance: "alta",
+      catalog_item_id: "item-ic", relevance_version_id: "publication-v3", relevance_score: 8.4,
+    });
+    expect(mocks.inserts[1].row).toMatchObject({
+      contact_type: "first_contact", catalog_item_id: "item-ic", relevance_version_id: "publication-v3", relevance_score: 8.4,
+    });
+  });
+
+  it("finds a lesson by synonym and selects it only when the student picks it", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue(courseCatalog);
+    mocks.findMatches.mockImplementation(async ({ query }: { query: string }) => query === "ICC" ? [courseCatalog[0]] : []);
+    renderModal({ profile: courseProfile });
+    await waitFor(() => expect(select("Tema").value).toBe("item-ic"));
+    await user.selectOptions(select("Grande área"), "Cirurgia Geral");
+    await user.type(screen.getByLabelText("Buscar tema"), "ICC");
+
+    const result = await screen.findByRole("button", { name: /Insuficiência Cardíaca/ });
+    expect(select("Tema").value).toBe("item-ap");
+    expect(mocks.findMatches).toHaveBeenLastCalledWith(expect.objectContaining({ query: "ICC", releaseId: "release-medway" }));
+    await user.click(result);
+    expect(select("Tema").value).toBe("item-ic");
+  });
+
+  it("registers a topic of the student's own when the lesson is missing", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue(courseCatalog);
+    renderModal({ profile: courseProfile });
+    await waitFor(() => expect(select("Tema").value).toBe("item-ic"));
+    await user.click(screen.getByRole("button", { name: "Não encontrei meu tema" }));
+    await user.type(screen.getByLabelText("Nome do tema"), "Síndrome disfágica");
+    await user.type(screen.getByLabelText("Especialidade do tema"), "Gastroenterologia");
+    await user.selectOptions(select("Importância"), "alta");
+    await user.click(submitButton("Registrar tema"));
+
+    await waitFor(() => expect(mocks.inserts).toHaveLength(2));
+    const block = mocks.inserts[0].row;
+    expect(block).toMatchObject({
+      title: "Síndrome disfágica", source: "Tema próprio", major_area: "Clínica Médica",
+      specialty: "Gastroenterologia", importance: "alta", suggested_importance: null,
+    });
+    expect(block).not.toHaveProperty("catalog_item_id");
+    expect(mocks.inserts[1].row).not.toHaveProperty("catalog_item_id");
+  });
+
+  it("suggests a similar lesson for a new topic without linking it silently", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue(courseCatalog);
+    mocks.findMatches.mockImplementation(async ({ query }: { query: string }) => query.startsWith("Insuf") ? [courseCatalog[0]] : []);
+    renderModal({ profile: courseProfile });
+    await waitFor(() => expect(select("Tema").value).toBe("item-ic"));
+    await user.selectOptions(select("Grande área"), "Cirurgia Geral");
+    await user.click(screen.getByRole("button", { name: "Não encontrei meu tema" }));
+    await user.type(screen.getByLabelText("Nome do tema"), "Insuficiencia cardiaca");
+
+    const similar = await screen.findByRole("list", { name: "Aulas parecidas" });
+    expect(similar.textContent).toContain("Insuficiência Cardíaca");
+    expect(screen.getByLabelText("Nome do tema")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Usar esta aula" }));
+    expect(select("Tema").value).toBe("item-ic");
+  });
+
+  it("links a legacy topic to the matching course lesson when saved", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue(courseCatalog);
+    const block = questionBlockFixture({ title: "Arritmias, Síncope e PCR", specialty: "Cardiologia", source: "MetaMed" });
+    const props = renderModal({ block, profile: courseProfile });
+    await waitFor(() => expect(select("Tema").value).toBe("item-arr"));
+    expect(screen.getByText(/passa a usar a aula/).textContent).toContain("Medway · Extensivo R1 2026");
+    await user.click(submitButton("Salvar alterações"));
+
+    await waitFor(() => expect(props.onClose).toHaveBeenCalledTimes(1));
+    expect(mocks.updateBlock).toHaveBeenCalledWith(expect.objectContaining({
+      changes: expect.objectContaining({
+        catalog_item_id: "item-arr", relevance_version_id: "publication-v3", relevance_score: 7.1,
+        source: "Medway · Extensivo R1 2026",
+      }),
+    }));
+  });
+
+  it("keeps a topic linked to a lesson read-only", async () => {
+    renderModal({ block: questionBlockFixture({ catalog_item_id: "item-ic", source: "Medway · Extensivo R1 2026" }), profile: courseProfile });
+    expect(screen.getByText(/vinculado a uma aula do seu cursinho/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Salvar alterações" })).toBeNull();
+    expect(mocks.loadSuggestions).not.toHaveBeenCalled();
   });
 
   it("blocks more correct answers than questions", async () => {

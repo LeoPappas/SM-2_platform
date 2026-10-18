@@ -63,6 +63,12 @@ AREA_BY_PREFIX = {
     "GO": "Ginecologia e Obstetrícia",
     "MP": "Medicina Preventiva",
 }
+# Search aliases the platform adds on top of the workbook, kept explicit so the
+# published source hash stays meaningful. Each entry is audited in the report.
+PLATFORM_ALIAS_ADDITIONS = {
+    "CM-CAR-004": ("ICC",),
+}
+SOURCE_DOCUMENT_TAG = "$relevance_v3$"
 RELEASE_META = {
     "Medway": {
         "provider_code": "medway",
@@ -350,7 +356,13 @@ def load_dataset(workbook_path: Path, document_path: Path) -> Dataset:
     examples = {item.external_id: item.effective_score for provider_items in items.values() for item in provider_items}
     fail(examples.get("MW-045") == Decimal("7.7"), f"MW-045 expected 7.7, found {examples.get('MW-045')}")
     fail(examples.get("MG-058") == Decimal("7.3"), f"MG-058 expected 7.3, found {examples.get('MG-058')}")
-    alias_count = sum(len(topic.aliases) for topic in topics.values())
+    for topic_id, additions in PLATFORM_ALIAS_ADDITIONS.items():
+        fail(topic_id in topics, f"Platform alias addition targets unknown topic {topic_id}")
+        existing = {normalize_alias(alias) for alias in topics[topic_id].aliases}
+        for alias in additions:
+            fail(normalize_alias(alias) not in existing, f"Platform alias {alias} already exists for {topic_id}")
+            existing.add(normalize_alias(alias))
+    alias_count = sum(len(search_aliases(topic)) for topic in topics.values())
     return Dataset(
         workbook_sha256=workbook_digest,
         document_sha256=document_digest,
@@ -359,6 +371,33 @@ def load_dataset(workbook_path: Path, document_path: Path) -> Dataset:
         formula_count=formula_count,
         alias_count=alias_count,
     )
+
+
+def search_aliases(topic: Topic) -> tuple[str, ...]:
+    return topic.aliases + PLATFORM_ALIAS_ADDITIONS.get(topic.topic_id, ())
+
+
+def render_source_document(dataset: Dataset) -> str:
+    """One JSON row per topic and item, so the SQL stays compact and reviewable."""
+    def row(values: list[Any]) -> str:
+        return json.dumps(values, ensure_ascii=False, separators=(",", ":"))
+
+    topic_rows = [row([
+        topic.topic_id, topic.canonical_name, topic.specialty, str(topic.score),
+        topic.editorial_signal, topic.confidence, topic.rationale,
+        list(search_aliases(topic)), [normalize_alias(alias) for alias in search_aliases(topic)],
+    ]) for topic in dataset.topics.values()]
+    provider_blocks = []
+    for provider, provider_items in dataset.items.items():
+        item_rows = [row([
+            item.external_id, item.catalog_area, item.title, str(item.effective_score),
+            [[link.topic_id, str(link.weight)] for link in item.links],
+        ]) for item in provider_items]
+        provider_blocks.append(json.dumps(provider) + ":[\n" + ",\n".join(item_rows) + "\n]")
+    document = '{"topics":[\n' + ",\n".join(topic_rows) + '\n],\n"items":{\n' + ",\n".join(provider_blocks) + "\n}}"
+    fail(SOURCE_DOCUMENT_TAG not in document, "Source document contains its own dollar-quote tag")
+    json.loads(document)
+    return document
 
 
 def sql_literal(value: Any) -> str:
@@ -394,6 +433,7 @@ def render_migration(dataset: Dataset, workbook_path: Path, document_path: Path)
 -- Source workbook SHA-256: {dataset.workbook_sha256}
 -- Technical document SHA-256: {dataset.document_sha256}
 -- Safety: v3 is seeded as validated, never active. No existing schedule changes.
+-- Platform search aliases outside the workbook: {json.dumps({k: list(v) for k, v in PLATFORM_ALIAS_ADDITIONS.items()}, ensure_ascii=False)}
 
 create table public.relevance_publications (
   id uuid primary key,
@@ -702,6 +742,7 @@ create trigger reject_tombstoned_catalog_item
         "items": {provider: len(items) for provider, items in dataset.items.items()},
         "links": {provider: sum(len(item.links) for item in items) for provider, items in dataset.items.items()},
         "formulas_with_valid_cache": dataset.formula_count,
+        "platform_alias_additions": {topic_id: list(aliases) for topic_id, aliases in PLATFORM_ALIAS_ADDITIONS.items()},
         "tombstones": ["medcof:MC-186"],
         "model_scope": {
             "exam_code": "GLOBAL",
@@ -713,19 +754,9 @@ create trigger reject_tombstoned_catalog_item
         publication_id, PUBLICATION_KEY, 2026, "validated",
         "0.7 * weighted_mean(topic_score) + 0.3 * max(topic_score)",
         "half_up_1_decimal", workbook_path.name, dataset.workbook_sha256,
-        document_path.name, dataset.document_sha256, "1.2.0",
+        document_path.name, dataset.document_sha256, "1.3.0",
         json.dumps(validation_report, ensure_ascii=False, separators=(",", ":")),
     ]]
-    topic_identity_rows = [[topic.topic_id, publication_id] for topic in dataset.topics.values()]
-    topic_version_rows = [[
-        publication_id, topic.topic_id, topic.canonical_name, topic.source_major_area,
-        topic.major_area, topic.specialty, topic.editorial_signal, topic.confidence,
-        topic.rationale, topic.reference_year,
-    ] for topic in dataset.topics.values()]
-    alias_rows = [[publication_id, topic.topic_id, alias, normalize_alias(alias)]
-                  for topic in dataset.topics.values() for alias in topic.aliases]
-    relevance_rows = [[publication_id, topic.topic_id, "GLOBAL", Decimal(topic.score), topic.reference_year]
-                      for topic in dataset.topics.values()]
     release_rows = []
     for provider, metadata in RELEASE_META.items():
         release_rows.append([
@@ -735,22 +766,20 @@ create trigger reject_tombstoned_catalog_item
             "validated",
         ])
     tombstone_rows = [["medcof", "MC-186", publication_id, "Duplicate removed in v3; identifier must remain unused"]]
-    item_rows: list[list[Any]] = []
-    link_rows: list[list[Any]] = []
-    for provider, provider_items in dataset.items.items():
-        release_id = releases[provider]
-        for item in provider_items:
-            item_id = uuid_for("item", str(release_id), item.external_id)
-            specialties = {dataset.topics[link.topic_id].specialty for link in item.links}
-            item_rows.append([
-                item_id, release_id, publication_id, item.external_id, item.catalog_area,
-                item.title, item.source_order, item.major_area,
-                "highest_weight_topic_experimental", item.specialty,
-                "unanimous_canonical_specialty" if len(specialties) == 1 else "integrated_content",
-                item.effective_score, len(item.links),
-            ])
-            for link in item.links:
-                link_rows.append([item_id, publication_id, link.topic_id, link.weight])
+    source_document = render_source_document(dataset)
+    # The dollar-quoted literal below starts and ends with a newline.
+    source_md5 = hashlib.md5(("\n" + source_document + "\n").encode("utf-8")).hexdigest()
+    prefix = "split_part(t ->> 0, '-', 1)"
+    source_area_sql = "case " + prefix + " " + " ".join(
+        f"when {sql_literal(code)} then {sql_literal(area)}" for code, area in AREA_BY_PREFIX.items()
+    ) + " end"
+    major_area_sql = "case " + prefix + " " + " ".join(
+        f"when {sql_literal(code)} then {sql_literal(AREA_NORMALIZATION[area])}" for code, area in AREA_BY_PREFIX.items()
+    ) + " end"
+    release_values = ", ".join(
+        f"({sql_literal(provider)}, {sql_literal(str(releases[provider]))}::uuid)" for provider in RELEASE_META
+    )
+    pub = sql_literal(str(publication_id)) + "::uuid"
 
     data_sql = "\n\n".join([
         insert_rows("public.relevance_publications", [
@@ -759,25 +788,97 @@ create trigger reject_tombstoned_catalog_item
             "technical_document_filename", "technical_document_sha256", "importer_version",
             "validation_report",
         ], publication_rows),
-        insert_rows("public.canonical_topics", ["topic_id", "first_publication_id"], topic_identity_rows),
-        insert_rows("public.canonical_topic_versions", [
-            "publication_id", "topic_id", "canonical_name", "source_major_area", "major_area",
-            "specialty", "editorial_signal", "confidence", "rationale", "reference_year",
-        ], topic_version_rows),
-        insert_rows("public.canonical_topic_aliases", ["publication_id", "topic_id", "alias", "normalized_alias"], alias_rows),
-        insert_rows("public.topic_relevance_scores", ["publication_id", "topic_id", "exam_code", "score", "reference_year"], relevance_rows),
+        f"""-- Topics and catalog items travel as one JSON document. The MD5 check makes
+-- the whole migration fail if the document was altered in transit.
+create temporary table relevance_v3_source (body jsonb not null);
+insert into relevance_v3_source (body)
+select source::jsonb from (select {SOURCE_DOCUMENT_TAG}
+{source_document}
+{SOURCE_DOCUMENT_TAG}::text as source) document
+where md5(source) = '{source_md5}';
+do $$
+begin
+  if (select count(*) from relevance_v3_source) <> 1 then
+    raise exception 'Relevance v3 source document checksum mismatch';
+  end if;
+end;
+$$;
+
+create temporary table relevance_v3_topics as
+select t, n from relevance_v3_source s
+cross join lateral jsonb_array_elements(s.body -> 'topics') with ordinality as topic(t, n);
+
+insert into public.canonical_topics (topic_id, first_publication_id)
+select t ->> 0, {pub} from relevance_v3_topics order by n;
+
+insert into public.canonical_topic_versions (
+  publication_id, topic_id, canonical_name, source_major_area, major_area,
+  specialty, editorial_signal, confidence, rationale, reference_year
+)
+select {pub}, t ->> 0, t ->> 1, {source_area_sql},
+  {major_area_sql},
+  t ->> 2, t ->> 4, t ->> 5, t ->> 6, 2026
+from relevance_v3_topics order by n;
+
+insert into public.canonical_topic_aliases (publication_id, topic_id, alias, normalized_alias)
+select {pub}, t ->> 0, alias.value, normalized.value
+from relevance_v3_topics
+cross join lateral jsonb_array_elements_text(t -> 7) with ordinality as alias(value, position)
+join lateral jsonb_array_elements_text(t -> 8) with ordinality as normalized(value, position)
+  on normalized.position = alias.position
+order by n, alias.position;
+
+insert into public.topic_relevance_scores (publication_id, topic_id, exam_code, score, reference_year)
+select {pub}, t ->> 0, 'GLOBAL', (t ->> 3)::numeric, 2026 from relevance_v3_topics order by n;""",
         insert_rows("public.course_catalog_releases", [
             "id", "publication_id", "provider_code", "provider_name", "release_name",
             "source_document", "source_edition", "source_volume", "source_extracted_on",
             "source_sha256", "status",
         ], release_rows),
         insert_rows("public.course_catalog_item_tombstones", ["provider_code", "external_id", "publication_id", "reason"], tombstone_rows),
-        insert_rows("public.course_catalog_items", [
-            "id", "release_id", "publication_id", "external_id", "catalog_area", "title",
-            "source_order", "major_area", "major_area_derivation", "specialty",
-            "specialty_derivation", "effective_relevance", "workload_weight",
-        ], item_rows),
-        insert_rows("public.course_catalog_item_topics", ["item_id", "publication_id", "topic_id", "weight"], link_rows),
+        f"""create temporary table relevance_v3_items as
+select md5('item:' || r.release_id::text || ':' || (i ->> 0))::uuid as id,
+  r.release_id, n::integer as source_order, i ->> 0 as external_id, i ->> 1 as catalog_area,
+  i ->> 2 as title, (i ->> 3)::numeric(3,1) as effective_relevance, i -> 4 as links
+from relevance_v3_source s
+cross join (values {release_values}) as r(provider, release_id)
+cross join lateral jsonb_array_elements(s.body -> 'items' -> r.provider) with ordinality as item(i, n);
+
+create temporary table relevance_v3_links as
+select it.id as item_id, l ->> 0 as topic_id, (l ->> 1)::numeric(10,9) as weight
+from relevance_v3_items it
+cross join lateral jsonb_array_elements(it.links) as link(l);
+
+-- Labels follow the importer: the highest-weight topic names the major area,
+-- and the specialty is kept only when every linked topic shares it.
+insert into public.course_catalog_items (
+  id, release_id, publication_id, external_id, catalog_area, title,
+  source_order, major_area, major_area_derivation, specialty,
+  specialty_derivation, effective_relevance, workload_weight
+)
+select it.id, it.release_id, {pub}, it.external_id, it.catalog_area, it.title, it.source_order,
+  dominant.major_area, 'highest_weight_topic_experimental',
+  case when specialties.total = 1 then specialties.only else 'Conteúdo integrado' end,
+  case when specialties.total = 1 then 'unanimous_canonical_specialty' else 'integrated_content' end,
+  it.effective_relevance, specialties.links
+from relevance_v3_items it
+cross join lateral (
+  select v.major_area from relevance_v3_links l
+  join public.canonical_topic_versions v on v.publication_id = {pub} and v.topic_id = l.topic_id
+  where l.item_id = it.id order by l.weight desc, l.topic_id collate "C" limit 1
+) dominant
+cross join lateral (
+  select count(distinct v.specialty) as total, min(v.specialty) as only, count(*) as links
+  from relevance_v3_links l
+  join public.canonical_topic_versions v on v.publication_id = {pub} and v.topic_id = l.topic_id
+  where l.item_id = it.id
+) specialties
+order by it.release_id, it.source_order;
+
+insert into public.course_catalog_item_topics (item_id, publication_id, topic_id, weight)
+select item_id, {pub}, topic_id, weight from relevance_v3_links;
+
+drop table relevance_v3_links, relevance_v3_items, relevance_v3_topics, relevance_v3_source;""",
     ])
 
     assertion_sql = """
@@ -1522,6 +1623,7 @@ def audit_summary(dataset: Dataset) -> dict[str, Any]:
         "items": {provider: len(items) for provider, items in dataset.items.items()},
         "links": {provider: sum(len(item.links) for item in items) for provider, items in dataset.items.items()},
         "formulas_with_valid_cache": dataset.formula_count,
+        "platform_alias_additions": {topic_id: list(aliases) for topic_id, aliases in PLATFORM_ALIAS_ADDITIONS.items()},
         "catalog_status": "validated",
         "numeric_engine_activation": None,
         "tombstones": ["medcof:MC-186"],

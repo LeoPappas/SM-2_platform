@@ -15,7 +15,7 @@ export type MajorArea =
 export type Importance = "alta" | "media" | "baixa";
 export type PerformanceBand = "muito_bom" | "bom" | "ruim" | "muito_ruim";
 export type CalculationMode = "performance" | "small_sample";
-export type CourseCatalogSource = "metamed" | "upload";
+export type CourseCatalogSource = "metamed" | "upload" | "course";
 export type PlanningSource = "automatic" | "manual";
 export type CatalogReleaseStatus = "draft" | "validated" | "active" | "retired";
 export type RelevanceValidationState = "draft" | "validated" | "rejected";
@@ -48,6 +48,8 @@ export type Database = {
           course_theme_total: number | null;
           course_catalog_source: CourseCatalogSource;
           course_catalog_filename: string | null;
+          /** Required when course_catalog_source is "course". */
+          course_catalog_release_id: string | null;
           birth_date: string | null;
           exam_interests: string[];
           city: string | null;
@@ -72,6 +74,7 @@ export type Database = {
           course_theme_total?: number | null;
           course_catalog_source?: CourseCatalogSource;
           course_catalog_filename?: string | null;
+          course_catalog_release_id?: string | null;
           birth_date?: string | null;
           exam_interests?: string[];
           city?: string | null;

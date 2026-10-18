@@ -68,7 +68,8 @@ try {
 
   await db.exec(await readFile(resolve(migrationDir, target), "utf8"));
   check(await value("select count(*)::int from public.canonical_topic_versions"), 492, "492 canonical topic versions seeded");
-  check(await value("select count(*)::int from public.canonical_topic_aliases"), 1244, "all aliases seeded");
+  check(await value("select count(*)::int from public.canonical_topic_aliases"), 1245, "workbook aliases plus the ICC platform alias seeded");
+  check(await value("select topic_id from public.canonical_topic_aliases where normalized_alias='icc'"), "CM-CAR-004", "ICC finds chronic heart failure");
   check(await value("select count(*)::int from public.course_catalog_items"), 920, "920 catalog items seeded");
   check(await value("select count(*)::int from public.course_catalog_item_topics"), 1235, "1235 item-topic links seeded");
   check(await value("select count(*)::int from public.course_catalog_releases where status='active'"), 0, "catalog is not activated by seed");

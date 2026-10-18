@@ -3,7 +3,7 @@
   "workbook_sha256": "3671a6c8ce245c5e89e744671adc518b48cef4151b195352505dc2819da3fd7e",
   "technical_document_sha256": "7710cf33765ec6d5145ab15cecff2d21f3c803af015c7949172835f54188f668",
   "topics": 492,
-  "aliases": 1244,
+  "aliases": 1245,
   "items": {
     "Medway": 172,
     "MedGrupo": 90,
@@ -15,6 +15,11 @@
     "MedCof": 685
   },
   "formulas_with_valid_cache": 7410,
+  "platform_alias_additions": {
+    "CM-CAR-004": [
+      "ICC"
+    ]
+  },
   "catalog_status": "validated",
   "numeric_engine_activation": null,
   "tombstones": [

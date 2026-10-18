@@ -98,11 +98,13 @@ $env:PGLITE_MODULE = Join-Path $weeklyVerificationDir 'node_modules/@electric-sq
 node scripts/verify-weekly-planning.mjs
 ```
 
-## Relevancia v3 em staging
+## Relevancia v3 e catalogos dos cursinhos
 
-A v3 foi importada como uma publicacao imutavel e versionada, separada do catalogo ativo. A migracao cria a taxonomia canonica, os tres catalogos de curso, os vinculos ponderados, a publicacao de relevancia GLOBAL/2026 e os campos de snapshot necessarios para comparar o motor numerico. Ela nao ativa catalogo nem motor, nao altera as datas reais de revisao e nao substitui as 184 aulas hoje exibidas no produto.
+A v3 e uma publicacao imutavel e versionada: taxonomia canonica de 492 temas, os catalogos Medway (172 aulas), MedGrupo/Medcurso (90) e MedCof (658), 1.235 vinculos ponderados e a relevancia GLOBAL/2026. A planilha `MetaMed_relevancia_v3.xlsx`, sem a aba `leia-me`, e a fonte da verdade. A plataforma acrescenta apenas o sinonimo `ICC` em `CM-CAR-004`, registrado em `PLATFORM_ALIAS_ADDITIONS` e no relatorio de validacao. `MC-186` fica reservado por tombstone; `MC-375` e o item mantido.
 
-O artefato gerado esta fixado aos hashes das fontes e valida 492 temas, 920 itens e 1.235 vinculos. `MC-186` fica reservado por tombstone; `MC-375` e o item mantido. A auditoria estrutural passou, mas as divergencias documentais e o manifesto de inclusoes/exclusoes dos cronogramas ainda precisam ser fechados antes da ativacao.
+Desde 18/10/2026 as duas migracoes estao no Supabase remoto (`relevance_catalog_v3_foundation` e `activate_course_catalogs`). Os tres catalogos estao ativos e o aluno escolhe o cursinho no onboarding ou em Configuracoes. Ao registrar um tema, a aula guarda `catalog_item_id`, a versao e a nota da publicacao; a importancia sugerida vem da nota (>= 7,5 alta, <= 3,5 baixa, demais media) e entra no motor categorico atual. O motor numerico continua inativo: nenhuma ativacao `shadow` foi criada.
+
+A migracao embute os temas e as aulas num unico documento JSON conferido por MD5, o que a mantem em cerca de 260 KB. Como ainda e grande demais para uma chamada do conector, ela foi aplicada assim: o texto exato do arquivo foi gravado em partes num schema privado temporario, cada parte conferida por MD5, e uma migracao curta conferiu o MD5 do arquivo inteiro, executou o conteudo e apagou o schema. O registro remoto mostra esse carregador, nao o SQL completo.
 
 Para conferir as fontes sem gerar arquivos, defina a pasta que contem os dois documentos e execute cada linha separadamente:
 
@@ -120,7 +122,7 @@ $env:PGLITE_MODULE = Join-Path $relevanceVerificationDir 'node_modules/@electric
 node scripts/verify-relevance-catalog.mjs
 ```
 
-A ativacao exige uma decisao separada e auditavel para o release do catalogo e, depois, para o modo `shadow` do motor. O calculo experimental aparece no simulador, mas snapshots de comparacao em revisoes reais so sao criados no banco quando existe uma ativacao GLOBAL em modo `shadow`. O modo ativo ainda nao existe nesta versao e deve ser introduzido por outra migracao somente depois da calibracao.
+A ativacao do modo `shadow` do motor continua sendo uma decisao separada e auditavel. O calculo experimental aparece no simulador, mas snapshots de comparacao em revisoes reais so sao criados no banco quando existe uma ativacao GLOBAL em modo `shadow`. O modo ativo ainda nao existe nesta versao e deve ser introduzido por outra migracao somente depois da calibracao.
 
 ## Desenvolvimento local
 

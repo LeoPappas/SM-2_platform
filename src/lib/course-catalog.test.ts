@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  findCatalogMatches,
+  findLegacyCatalogMatch,
+  fromCatalogSuggestion,
   getCatalogAreas,
   getCatalogSpecialties,
   getCatalogTopics,
   parseCourseCatalog,
   searchCourseCatalog,
+  topicKey,
 } from "./course-catalog";
 
 describe("course catalog", () => {
@@ -45,5 +49,32 @@ describe("course catalog", () => {
     expect(getCatalogAreas(topics)).toEqual(["Cirurgia Geral", "Radiologia"]);
     expect(getCatalogSpecialties(topics, "Cirurgia Geral")).toEqual(["Trauma"]);
     expect(getCatalogTopics(topics, "Cirurgia Geral", "Trauma").map(topic => topic.title)).toEqual(["Choque", "FAST"]);
+  });
+
+  it("maps a course catalog suggestion with its relevance snapshot", () => {
+    const topic = fromCatalogSuggestion({
+      catalog_release_id: "release", catalog_item_id: "item", external_id: "MW-002", title: "Insuficiência Cardíaca",
+      catalog_area: "Clínica Médica", major_area: "Clínica Médica", specialty: "Cardiologia", effective_score: "8.4" as never,
+      relevance_version_id: "publication", topic_ids: ["CM-CAR-004"], workload_weight: 1, suggested_importance: "alta",
+    }, "Medway · Extensivo R1 2026");
+    expect(topic).toMatchObject({ catalogItemId: "item", relevanceScore: 8.4, suggestedImportance: "alta", sourceLabel: "Medway · Extensivo R1 2026" });
+    expect(topicKey(topic)).toBe("item");
+    expect(topicKey({ ...topic, catalogItemId: null })).toBe("Insuficiência Cardíaca");
+  });
+
+  it("matches a legacy topic by title regardless of accents and case", () => {
+    const topics = [
+      { title: "Arritmias, Síncope e PCR", catalogArea: "Clínica Médica", majorArea: "Clínica Médica" as const, specialty: "Conteúdo integrado", suggestedImportance: "media" as const },
+      { title: "Arritmias, Síncope e PCR", catalogArea: "Clínica Médica", majorArea: "Clínica Médica" as const, specialty: "Cardiologia", suggestedImportance: "media" as const },
+    ];
+    expect(findLegacyCatalogMatch(topics, { title: "arritmias, sincope e pcr", specialty: "Cardiologia" })).toBe(topics[1]);
+    expect(findLegacyCatalogMatch(topics, { title: "Arritmias, Síncope e PCR", specialty: "Outra" })).toBe(topics[0]);
+    expect(findLegacyCatalogMatch(topics, { title: "Asma", specialty: "Pneumologia" })).toBeNull();
+  });
+
+  it("searches the loaded list locally when there is no course catalog", async () => {
+    const topics = [{ title: "Choque", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia" as const, specialty: "Trauma", suggestedImportance: "media" as const }];
+    expect(await findCatalogMatches({ topics, query: "c" })).toEqual([]);
+    expect(await findCatalogMatches({ topics, query: "choq" })).toEqual(topics);
   });
 });
