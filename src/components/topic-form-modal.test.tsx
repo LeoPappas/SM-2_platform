@@ -265,6 +265,16 @@ describe("TopicFormModal", () => {
     expect(mocks.loadSuggestions).not.toHaveBeenCalled();
   });
 
+  it("dates the first contact by the student's planning timezone, not the device clock", async () => {
+    // 03:30 UTC on 12/10 is still 23:30 on 11/10 in Manaus.
+    vi.setSystemTime(new Date("2026-10-12T03:30:00Z"));
+    renderModal({ profile: { exam_date: "2027-03-01", timezone: "America/Manaus", course_catalog_source: "metamed" } as never });
+    const date = screen.getByLabelText("Data do primeiro contato") as HTMLInputElement;
+    expect(date.value).toBe("2026-10-11");
+    expect(date.max).toBe("2026-10-11");
+    await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));
+  });
+
   it("blocks more correct answers than questions", async () => {
     renderModal();
     await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));

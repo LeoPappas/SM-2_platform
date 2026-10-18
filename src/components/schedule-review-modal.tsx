@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
-import { eachDayOfInterval, format, getISODay } from "date-fns";
+import { eachDayOfInterval, format } from "date-fns";
 import { CalendarPlus, CalendarX, X } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
 import type { QuestionBlock } from "@/lib/database.types";
@@ -13,7 +13,7 @@ export function ScheduleReviewModal({
   userId,
   minDate,
   maxDate,
-  studyDays,
+  capacityForDate,
   onClose,
   onChanged,
 }: {
@@ -21,7 +21,8 @@ export function ScheduleReviewModal({
   userId: string;
   minDate?: string;
   maxDate?: string;
-  studyDays?: number[];
+  /** Review slots on a day, from that week's adjustment or the routine. */
+  capacityForDate?: (date: string) => number;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
 }) {
@@ -35,12 +36,12 @@ export function ScheduleReviewModal({
   const titleId = useId();
   const panelRef = useModalAccessibility(onClose, submitting);
   const availableDates = useMemo(() => {
-    if (!minDate || !maxDate || minDate > maxDate || !studyDays?.length) return [];
+    if (!minDate || !maxDate || minDate > maxDate || !capacityForDate) return [];
     return eachDayOfInterval({ start: new Date(`${minDate}T12:00:00`), end: new Date(`${maxDate}T12:00:00`) })
-      .filter(day => studyDays.includes(getISODay(day)))
-      .map(day => format(day, "yyyy-MM-dd")).slice(0, 7);
-  }, [maxDate, minDate, studyDays]);
-  const unavailableDay = Boolean(date && studyDays && !studyDays.includes(getISODay(new Date(`${date}T12:00:00`))));
+      .map(day => format(day, "yyyy-MM-dd"))
+      .filter(day => capacityForDate(day) > 0).slice(0, 7);
+  }, [capacityForDate, maxDate, minDate]);
+  const unavailableDay = Boolean(date && capacityForDate && capacityForDate(date) === 0);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -123,7 +124,7 @@ export function ScheduleReviewModal({
 
           {unavailableDay && (
             <p className="text-sm leading-5 text-amber-700">
-              Este dia fica fora da sua rotina habitual, mas você pode agendar a revisão nele.
+              Este dia está fora da sua disponibilidade nessa semana, mas você pode agendar a revisão nele.
             </p>
           )}
 

@@ -72,10 +72,12 @@ Plano: [`tasks/plan.md`](plan.md). Verificação padrão de cada tarefa: `npm te
 ### T7: Desligar Calendar no Google Cloud e na Vercel
 
 **Descrição:** São ações manuais ou de painel, e cada uma precisa de confirmação.
-- [ ] Vercel: remover `GOOGLE_OAUTH_CLIENT_ID` e `GOOGLE_OAUTH_CLIENT_SECRET` dos 3 ambientes (resolve também o alerta `readable-secret`). Remover também do `.env` local
-- [ ] Google Cloud: tirar `calendar.events` da tela de consentimento, desativar a Calendar API e publicar o app. Com escopos básicos, não há verificação de escopo sensível
-- [ ] Supabase → Providers → Google: **manter**, porque o login depende dele
-- [ ] Apagar à mão o único evento "Revisar bloco: …" que sobrou e revogar o acesso da MetaMed em myaccount.google.com/permissions
+> Concluída pelo Leonardo em 2026-10-18.
+
+- [x] Vercel: remover `GOOGLE_OAUTH_CLIENT_ID` e `GOOGLE_OAUTH_CLIENT_SECRET` dos 3 ambientes (resolve também o alerta `readable-secret`). Remover também do `.env` local
+- [x] Google Cloud: tirar `calendar.events` da tela de consentimento, desativar a Calendar API e publicar o app. Com escopos básicos, não há verificação de escopo sensível
+- [x] Supabase → Providers → Google: **manter**, porque o login depende dele
+- [x] Apagar à mão o único evento "Revisar bloco: …" que sobrou e revogar o acesso da MetaMed em myaccount.google.com/permissions
 
 **Dependências:** Fase A em produção · **Tamanho:** XS
 
@@ -96,7 +98,7 @@ O caminho de volta recria as colunas com os defaults de antes. Perder um `calend
 **Critérios de aceite:**
 - [x] Testada em PGlite (`npm run verify:db`): cadeia do remoto, v3 antes e depois da remoção, rollback exato, idempotência e aborto atômico
 - [x] Aplicada no Supabase de produção em 2026-10-11, antes do deploy, por decisão do time (só havia contas de teste). Conferido depois: nenhuma coluna, gatilho, índice ou função do Calendar; `complete_block_review` manteve as permissões; dados preservados
-- [ ] Até o deploy da `dev`, a versão publicada (código antigo) falha ao criar tema, remarcar e salvar preferências
+- [x] Até o deploy da `dev`, a versão publicada (código antigo) falha ao criar tema, remarcar e salvar preferências. Resolvido com o PR #4 em produção (2026-10-11)
 - [ ] As advisories do Supabase não mostram regressão
 
 **Dependências:** deploy do código da Fase A · **Arquivos:** `supabase/migrations/20260918235900_drop_google_calendar_sync.sql`, `supabase/rollbacks/`, `scripts/verify-drop-calendar-sync.mjs` · **Tamanho:** S

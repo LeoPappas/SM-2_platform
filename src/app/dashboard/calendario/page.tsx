@@ -17,11 +17,13 @@ import {
 import { ptBR } from "date-fns/locale";
 import { CalendarClock, CalendarPlus, ChevronLeft, ChevronRight, Play, X } from "lucide-react";
 import { BrandName } from "@/components/brand-name";
+import { ReviewDragContext, ReviewDragHandle, useReviewDropTarget, type DraggedReview, type ReviewDropTarget } from "@/components/review-drag";
 import { ReviewModal } from "@/components/review-modal";
 import { ScheduleReviewModal } from "@/components/schedule-review-modal";
 import type { BlockReview, QuestionBlock, StudentProfile, WeeklyPlan } from "@/lib/database.types";
 import { planningToday } from "@/lib/planning-date";
-import { normalizeStudyAvailability, resolvePlanningWeek, type WeekStartsOn } from "@/lib/study-availability";
+import { scheduleBlockReview } from "@/lib/revision-actions";
+import { availabilityResolver, type WeekStartsOn } from "@/lib/study-availability";
 import { prepareWeeklyPlanning } from "@/lib/weekly-planning";
 import { supabase } from "@/lib/supabase";
 
@@ -45,6 +47,9 @@ export default function CalendarPage() {
   const [actionEvent, setActionEvent] = useState<CalendarEvent | null>(null);
   const [scheduleBlock, setScheduleBlock] = useState<QuestionBlock | null>(null);
   const [reviewBlock, setReviewBlock] = useState<QuestionBlock | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // A dragged review shows on its new day at once and returns if the save fails.
+  const [pendingMoves, setPendingMoves] = useState<Record<string, string>>({});
 
   const loadData = useCallback(async (userId: string) => {
     const { data: savedProfile } = await supabase.from("student_profiles").select("*").eq("user_id", userId).maybeSingle();
@@ -53,7 +58,7 @@ export default function CalendarPage() {
       catch { setError("Não foi possível atualizar o fechamento da semana. Atualize a página para tentar novamente."); }
     }
     const [blocksResult, reviewsResult, profileResult, plansResult] = await Promise.all([
-      supabase.from("question_blocks").select("*").eq("user_id", userId),
+      supabase.from("question_blocks").select("*").eq("user_id", userId).is("archived_at", null),
       supabase.from("block_reviews").select("*").eq("user_id", userId).order("review_date"),
       supabase.from("student_profiles").select("*").eq("user_id", userId).maybeSingle(),
       supabase.from("weekly_plans").select("*").eq("user_id", userId),
@@ -87,11 +92,12 @@ export default function CalendarPage() {
         type: "first-contact",
         block,
       };
-      const next: CalendarEvent = block.planned_review_date
+      const plannedDate = pendingMoves[block.id] ?? block.planned_review_date;
+      const next: CalendarEvent = plannedDate
         ? {
             id: `${block.id}-scheduled`,
-            date: block.planned_review_date,
-            label: block.planning_source === "manual" ? "Dia escolhido" : "Revisão agendada",
+            date: plannedDate,
+            label: block.planning_source === "manual" || pendingMoves[block.id] ? "Dia escolhido" : "Revisão agendada",
             type: "scheduled",
             block,
           }
@@ -115,7 +121,8 @@ export default function CalendarPage() {
       }] : [];
     });
     return [...blockEvents, ...reviewEvents];
-  }, [blocks, reviews]);
+  }, [blocks, reviews, pendingMoves]);
+  const availabilityOn = useMemo(() => profile ? availabilityResolver(profile, weeklyPlans) : null, [profile, weeklyPlans]);
 
   if (loading) return <div className="flex min-h-[60vh] items-center justify-center text-sm text-gray-500">Carregando calendário...</div>;
 
@@ -124,11 +131,30 @@ export default function CalendarPage() {
   const calendarEnd = endOfWeek(endOfMonth(currentMonth), { weekStartsOn });
   const calendarDays = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
   const today = planningToday(profile?.timezone);
+  const capacityForDate = (date: string) => availabilityOn ? availabilityOn(date).dailyCapacities[String(getISODay(new Date(`${date}T12:00:00`)))] ?? 0 : 1;
+  const moving = Object.keys(pendingMoves).length > 0;
+  const moveToDate = async (review: DraggedReview, target: ReviewDropTarget) => {
+    const block = blocks.find(item => item.id === review.blockId);
+    if (!session || !block || moving || target.date < today) return;
+    setPendingMoves({ [block.id]: target.date });
+    setError(null);
+    setNotice(null);
+    try {
+      await scheduleBlockReview({ block, userId: session.user.id, date: target.date });
+      await loadData(session.user.id);
+      setNotice(`${block.title} foi para ${target.label}.`);
+    } catch (cause) {
+      setError(`Não foi possível mover ${block.title}; ela voltou para o dia anterior. ${cause instanceof Error ? cause.message : ""}`.trim());
+    } finally {
+      setPendingMoves({});
+    }
+  };
   const weekdayLabels = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."];
 
   return (
     <div className="page-shell">
-      {error && <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {notice && <div role="status" className="mb-5 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
 
       <header className="page-header">
         <h1 className="page-title mt-0">Calendário</h1>
@@ -164,40 +190,27 @@ export default function CalendarPage() {
                 );
               })}
             </div>
-            <div className="grid grid-cols-7 border-l border-gray-300">
-              {calendarDays.map(day => {
-                const date = format(day, "yyyy-MM-dd");
-                const dayEvents = events.filter(event => event.date === date);
-                const inMonth = isSameMonth(day, currentMonth);
-                const isToday = date === today;
-                const week = resolvePlanningWeek(date, weekStartsOn, weeklyPlans);
-                const override = weeklyPlans.find(plan => plan.week_start === week.weekStart);
-                const availability = profile ? normalizeStudyAvailability({ studyDays: override?.study_days ?? profile.study_days, dailyCapacity: profile.daily_theme_capacity, dailyCapacities: override?.daily_capacities ?? profile.daily_capacities }) : null;
-                const unavailable = Boolean(availability && availability.dailyCapacities[String(getISODay(day))] === 0);
-                return (
-                  <div key={date} aria-label={unavailable ? `${format(day, "d 'de' MMMM", { locale: ptBR })}, fora da rotina habitual` : undefined} className={`min-h-32 border-b border-r border-gray-300 p-2 ${!inMonth ? "bg-gray-100" : unavailable ? "bg-gray-50" : "bg-white"}`}>
-                    <div className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${isToday ? "bg-blue-700 text-white" : inMonth ? "text-gray-700" : "text-gray-400"}`}>
-                      {format(day, "d")}
-                    </div>
-                    <div className="space-y-1">
-                      {dayEvents.slice(0, 4).map(event => (
-                        <button
-                          key={event.id}
-                          type="button"
-                          onClick={() => event.type === "window" || event.type === "scheduled" ? setActionEvent(event) : undefined}
-                          disabled={event.type === "first-contact" || event.type === "completed"}
-                          title={`${event.label}: ${event.block.title}`}
-                          className={`block w-full truncate rounded px-2 py-1 text-left text-[11px] font-semibold ${eventClass(event.type)}`}
-                        >
-                          {event.block.title}
-                        </button>
-                      ))}
-                      {dayEvents.length > 4 && <p className="text-center text-[10px] text-gray-500">+{dayEvents.length - 4}</p>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <ReviewDragContext keyboard={false} onMove={(review, target) => void moveToDate(review, target)}>
+              <div className="grid grid-cols-7 border-l border-gray-300">
+                {calendarDays.map(day => {
+                  const date = format(day, "yyyy-MM-dd");
+                  return (
+                    <CalendarDay
+                      key={date}
+                      day={day}
+                      date={date}
+                      events={events.filter(event => event.date === date)}
+                      inMonth={isSameMonth(day, currentMonth)}
+                      isToday={date === today}
+                      unavailable={Boolean(availabilityOn) && capacityForDate(date) === 0}
+                      acceptsDrop={date >= today && !moving}
+                      dragDisabled={moving}
+                      onOpen={setActionEvent}
+                    />
+                  );
+                })}
+              </div>
+            </ReviewDragContext>
           </div>
         </div>
       </section>
@@ -244,7 +257,7 @@ export default function CalendarPage() {
           block={scheduleBlock}
           userId={session.user.id}
           minDate={today}
-          studyDays={profile?.study_days}
+          capacityForDate={capacityForDate}
           onClose={() => setScheduleBlock(null)}
           onChanged={() => loadData(session.user.id)}
         />
@@ -260,6 +273,41 @@ export default function CalendarPage() {
           onCompleted={() => loadData(session.user.id)}
         />
       )}
+    </div>
+  );
+}
+
+function CalendarDay({ day, date, events, inMonth, isToday, unavailable, acceptsDrop, dragDisabled, onOpen }: {
+  day: Date; date: string; events: CalendarEvent[]; inMonth: boolean; isToday: boolean; unavailable: boolean;
+  acceptsDrop: boolean; dragDisabled: boolean; onOpen: (event: CalendarEvent) => void;
+}) {
+  const label = format(day, "EEEE dd/MM", { locale: ptBR });
+  const { setNodeRef, isOver } = useReviewDropTarget(`day:${date}`, { date, label }, !acceptsDrop);
+  return (
+    <div ref={setNodeRef} aria-label={unavailable ? `${format(day, "d 'de' MMMM", { locale: ptBR })}, fora da disponibilidade da semana` : undefined} className={`min-h-32 border-b border-r border-gray-300 p-2 transition-shadow ${isOver ? "ring-2 ring-inset ring-blue-500" : ""} ${!inMonth ? "bg-gray-100" : unavailable ? "bg-gray-50" : "bg-white"}`}>
+      <div className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${isToday ? "bg-blue-700 text-white" : inMonth ? "text-gray-700" : "text-gray-400"}`}>
+        {format(day, "d")}
+      </div>
+      <div className="space-y-1">
+        {events.slice(0, 4).map(event => event.type === "window" || event.type === "scheduled" ? (
+          <ReviewDragHandle
+            key={event.id}
+            id={`calendar:${event.id}`}
+            review={{ blockId: event.block.id, title: event.block.title, date: event.date }}
+            disabled={dragDisabled}
+            onClick={() => onOpen(event)}
+            title={`${event.label}: ${event.block.title}. Arraste para outro dia ou clique para mais opções.`}
+            className={`block w-full truncate rounded px-2 py-1 text-left text-[11px] font-semibold ${eventClass(event.type)}`}
+          >
+            {event.block.title}
+          </ReviewDragHandle>
+        ) : (
+          <button key={event.id} type="button" disabled title={`${event.label}: ${event.block.title}`} className={`block w-full truncate rounded px-2 py-1 text-left text-[11px] font-semibold ${eventClass(event.type)}`}>
+            {event.block.title}
+          </button>
+        ))}
+        {events.length > 4 && <p className="text-center text-[10px] text-gray-500">+{events.length - 4}</p>}
+      </div>
     </div>
   );
 }

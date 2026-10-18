@@ -8,8 +8,9 @@ import { supabase } from "@/lib/supabase";
 import { useModalAccessibility } from "@/lib/use-modal-accessibility";
 
 export function WeeklyAvailabilityModal({
-  weekStart, dailyCapacities, hasOverride, onClose, onSaved,
+  weekStart, dailyCapacities, hasOverride, onClose, onSaved, title = "Ajustar esta semana",
 }: {
+  title?: string;
   weekStart: string;
   dailyCapacities: Record<string, number>;
   hasOverride: boolean;
@@ -54,7 +55,7 @@ export function WeeklyAvailabilityModal({
       <div ref={panelRef} tabIndex={-1} className="modal-panel max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 id={titleId} className="text-lg font-semibold text-gray-900">Ajustar esta semana</h2>
+            <h2 id={titleId} className="text-lg font-semibold text-gray-900">{title}</h2>
             <p className="mt-2 text-sm leading-6 text-gray-600">Escolha quantas revisões cabem em cada dia. Sua rotina habitual permanece igual.</p>
           </div>
           <button type="button" className="icon-button" aria-label="Fechar" disabled={saving} onClick={onClose}><X size={18} /></button>
@@ -82,7 +83,7 @@ export function WeeklyAvailabilityModal({
           <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4">
             {hasOverride && <button type="button" className="button-secondary mr-auto" disabled={saving || saved} onClick={() => void persist(true)}><RotateCcw size={15} /> Usar rotina habitual</button>}
             <button type="button" className="button-secondary" disabled={saving} onClick={onClose}>{saved ? "Fechar" : "Cancelar"}</button>
-            <button type="submit" className="button-primary" disabled={saving || saved}><Check size={15} /> {saving ? "Salvando..." : "Salvar esta semana"}</button>
+            <button type="submit" className="button-primary" disabled={saving || saved}><Check size={15} /> {saving ? "Salvando..." : "Salvar a semana"}</button>
           </div>
         </form>
       </div>

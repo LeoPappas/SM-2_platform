@@ -6,20 +6,21 @@ Plataforma semanal de revisao por temas para estudantes de medicina. O aluno cad
 
 - Onboarding com vocativo, dias de estudo, capacidade por dia, inicio da semana, fuso, prova-alvo e dados opcionais de perfil.
 - Rotina habitual com ajuste por semana, pausa com capacidade zero e restauracao do padrao.
-- Catalogo MetaMed com 184 aulas ou importacao privada de CSV/TSV do cursinho.
+- Aviso de inicio de semana no Inicio: ajustar os dias livres ou manter a rotina (e, nos dois ultimos dias, o mesmo para a proxima semana).
 - Cinco grandes areas fixas e especialidades padronizadas.
-- Cadastro por selecao no catalogo vigente de 184 aulas. A base canonica v3 esta validada estruturalmente em staging, mas continua inativa enquanto as pendencias editoriais e de proveniencia sao reconciliadas.
 - Motor deterministico proprio, isolado da interface.
 - Regra de amostra pequena para menos de 20 questoes.
 - Planejamento semanal: atrasos FIFO, revisoes devidas por prioridade e antecipacoes elegiveis somente com vagas restantes.
 - Atraso criado apos o fechamento da semana, com ocorrencia unica e antiguidade preservada.
-- Movimentacao manual por arrastar ou escolher data, inclusive fora da rotina e em semanas futuras.
+- Movimentacao manual por arrastar (mouse, toque e teclado) ou escolher data, entre dias, para a proxima semana e no calendario mensal, inclusive fora da rotina. Se o salvamento falhar, a revisao volta para o dia anterior.
 - Previa da proxima semana sem alterar a agenda automatica da semana atual.
 - Conclusao de revisao atomica e idempotente.
 - Decisao manual para uma ultima revisao antes da prova.
 - Calendario com distincao entre janela calculada e dia escolhido.
 - Metricas de progressao e desempenho por grande area ponderadas pela quantidade de questoes.
 - Escolha do cursinho (Lista MetaMed, Medway, MedCof ou Medcurso) e cadastro de temas pela lista de aulas dele, com busca por sinonimos e tema proprio.
+- Arquivar temas: saem do planejamento e do calendario, mantem o historico e podem ser restaurados; a exclusao definitiva fica em "Arquivados".
+- A plataforma planeja apenas revisoes; o primeiro contato segue o cronograma do aluno.
 
 Banco de questoes, flashcards, IA e rankings nao fazem parte deste MVP.
 

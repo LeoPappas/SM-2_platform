@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { format } from "date-fns";
 import { AlertTriangle, Check, Link2, Search, X } from "lucide-react";
 import { updateQuestionBlock } from "@/lib/question-block-writes";
 import {
@@ -21,6 +20,7 @@ import type {
   StudentProfile,
 } from "@/lib/database.types";
 import { MAJOR_AREAS, SPECIALTIES_BY_AREA, type CatalogTopic } from "@/lib/medical-catalog";
+import { planningToday } from "@/lib/planning-date";
 import { findAutomaticReviewDate, importanceToLegacyWeight } from "@/lib/revision-actions";
 import {
   ENGINE_VERSION,
@@ -79,7 +79,9 @@ export function TopicFormModal({
     block?.source === CUSTOM_TOPIC_SOURCE ? block.importance : "media",
   );
   const [customMatches, setCustomMatches] = useState<CatalogTopic[]>([]);
-  const [studyDate, setStudyDate] = useState(block?.study_date ?? format(new Date(), "yyyy-MM-dd"));
+  // The student's planning timezone decides "today", not the device clock.
+  const today = planningToday(profile?.timezone);
+  const [studyDate, setStudyDate] = useState(block?.study_date ?? today);
   const [questionCount, setQuestionCount] = useState(block?.question_count ?? 20);
   const [correctCount, setCorrectCount] = useState(block?.correct_count ?? 0);
   const [difficulty, setDifficulty] = useState<DifficultyRating>(block?.perceived_difficulty ?? "Médio");
@@ -468,7 +470,7 @@ export function TopicFormModal({
               <h3 className="text-sm font-semibold text-gray-900">Desempenho no primeiro contato</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <Field label="Data do primeiro contato">
-                  <input type="date" required max={format(new Date(), "yyyy-MM-dd")} value={studyDate} onChange={event => setStudyDate(event.target.value)} className="field-control" />
+                  <input type="date" required max={today} value={studyDate} onChange={event => setStudyDate(event.target.value)} className="field-control" />
                 </Field>
                 <Field label="Questões">
                   <input type="number" min={1} required value={questionCount} onChange={event => {

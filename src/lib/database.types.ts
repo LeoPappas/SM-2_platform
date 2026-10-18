@@ -355,6 +355,8 @@ export type Database = {
           daily_capacities?: DailyCapacities | null;
           week_starts_on?: number;
           closed_at?: string | null;
+          /** Set when the student adjusted the week or chose to keep the routine. */
+          availability_confirmed_at?: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -490,6 +492,8 @@ export type Database = {
           relevance_formula_version: "global-linear-bounded-v1" | null;
           relevance_formula_config: RelevanceFormulaConfig | null;
           relevance_shadow_interval_days: number | null;
+          /** Archived topics leave planning but keep their history. */
+          archived_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -532,6 +536,7 @@ export type Database = {
           relevance_formula_version?: "global-linear-bounded-v1" | null;
           relevance_formula_config?: RelevanceFormulaConfig | null;
           relevance_shadow_interval_days?: number | null;
+          archived_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -616,6 +621,10 @@ export type Database = {
         Returns: WeeklyPlan;
       };
       reset_weekly_availability: {
+        Args: { p_week_start: string };
+        Returns: WeeklyPlan;
+      };
+      confirm_weekly_availability: {
         Args: { p_week_start: string };
         Returns: WeeklyPlan;
       };
