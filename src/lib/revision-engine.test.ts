@@ -6,6 +6,10 @@ import {
   calculateAccuracy,
   calculateNextInterval,
   calculatePriority,
+  importanceFromRelevance,
+  relevanceFromImportance,
+  relevanceIntervalFactor,
+  relevancePriorityWeight,
   calculateUrgency,
   classifyPerformance,
   findNearestStudySlot,
@@ -32,14 +36,14 @@ describe("MetaMed revision engine", () => {
       questionCount: 20,
       correctCount: 16,
       perceivedDifficulty: "Médio",
-      importance: "alta",
+      relevance: 10,
       isFirstContact: true,
     });
     const second = calculateNextInterval({
       questionCount: 20,
       correctCount: 18,
       perceivedDifficulty: "Médio",
-      importance: "alta",
+      relevance: 10,
       previousIntervalDays: first.intervalDays,
       isFirstContact: false,
     });
@@ -47,7 +51,7 @@ describe("MetaMed revision engine", () => {
       questionCount: 20,
       correctCount: 17,
       perceivedDifficulty: "Fácil",
-      importance: "alta",
+      relevance: 10,
       previousIntervalDays: second.intervalDays,
       isFirstContact: false,
     });
@@ -63,14 +67,14 @@ describe("MetaMed revision engine", () => {
       questionCount: 20,
       correctCount: 11,
       perceivedDifficulty: "Médio",
-      importance: "alta",
+      relevance: 10,
       isFirstContact: true,
     });
     const second = calculateNextInterval({
       questionCount: 20,
       correctCount: 14,
       perceivedDifficulty: "Médio",
-      importance: "alta",
+      relevance: 10,
       previousIntervalDays: first.intervalDays,
       isFirstContact: false,
     });
@@ -78,7 +82,7 @@ describe("MetaMed revision engine", () => {
       questionCount: 20,
       correctCount: 10,
       perceivedDifficulty: "Difícil",
-      importance: "alta",
+      relevance: 10,
       previousIntervalDays: second.intervalDays,
       isFirstContact: false,
     });
@@ -91,7 +95,7 @@ describe("MetaMed revision engine", () => {
       questionCount: 15,
       correctCount: 7,
       perceivedDifficulty: "Difícil",
-      importance: "alta",
+      relevance: 10,
       previousIntervalDays: 7,
       isFirstContact: false,
     });
@@ -99,14 +103,14 @@ describe("MetaMed revision engine", () => {
       questionCount: 10,
       correctCount: 9,
       perceivedDifficulty: "Muito fácil",
-      importance: "baixa",
+      relevance: 1,
       isFirstContact: true,
     });
     const rareTopicSecond = calculateNextInterval({
       questionCount: 10,
       correctCount: 10,
       perceivedDifficulty: "Fácil",
-      importance: "baixa",
+      relevance: 1,
       previousIntervalDays: rareTopicFirst.intervalDays,
       isFirstContact: false,
     });
@@ -122,7 +126,7 @@ describe("MetaMed revision engine", () => {
       questionCount: 20,
       correctCount: 8,
       perceivedDifficulty: "Muito difícil",
-      importance: "media",
+      relevance: 5.5,
       previousIntervalDays: 7,
       isFirstContact: false,
     });
@@ -136,7 +140,7 @@ describe("MetaMed revision engine", () => {
       questionCount: 20,
       correctCount: 20,
       perceivedDifficulty: "Muito fácil",
-      importance: "baixa",
+      relevance: 1,
       previousIntervalDays: 180,
       isFirstContact: false,
       reviewDate: "2026-10-01",
@@ -164,11 +168,11 @@ describe("MetaMed revision engine", () => {
 
   it("orders the validated weekly priorities", () => {
     const priorities = [
-      calculatePriority({ urgency: 1.4, performanceBand: "muito_ruim", importance: "alta" }),
-      calculatePriority({ urgency: 1.17, performanceBand: "ruim", importance: "alta" }),
-      calculatePriority({ urgency: 1.33, performanceBand: "bom", importance: "alta" }),
-      calculatePriority({ urgency: 0.9, performanceBand: "bom", importance: "media" }),
-      calculatePriority({ urgency: 1.25, performanceBand: "muito_bom", importance: "baixa" }),
+      calculatePriority({ urgency: 1.4, performanceBand: "muito_ruim", relevance: 10 }),
+      calculatePriority({ urgency: 1.17, performanceBand: "ruim", relevance: 10 }),
+      calculatePriority({ urgency: 1.33, performanceBand: "bom", relevance: 10 }),
+      calculatePriority({ urgency: 0.9, performanceBand: "bom", relevance: 5.5 }),
+      calculatePriority({ urgency: 1.25, performanceBand: "muito_bom", relevance: 1 }),
     ];
 
     expect(priorities.map(value => Number(value.toFixed(2)))).toEqual([9.24, 5.97, 5.19, 2.34, 1.25]);
@@ -606,7 +610,52 @@ function block(
     backlog_since: null,
     backlog_urgency: null,
     pre_exam_review_requested: false,
+    engine_relevance: relevanceFromImportance(importance),
     performance_band: classifyPerformance(accuracy),
     created_at: `${lastReviewDate}T12:00:00Z`,
   } as QuestionBlock;
 }
+
+describe("numeric relevance", () => {
+  it("maps the 1–10 score linearly onto the interval, from 1.2 down to 0.8", () => {
+    expect(relevanceIntervalFactor(1)).toBeCloseTo(1.2, 10);
+    expect(relevanceIntervalFactor(5.5)).toBeCloseTo(1, 10);
+    expect(relevanceIntervalFactor(7.5)).toBeCloseTo(0.9111, 4);
+    expect(relevanceIntervalFactor(10)).toBeCloseTo(0.8, 10);
+    expect(relevanceIntervalFactor(-3)).toBeCloseTo(1.2, 10);
+    expect(relevanceIntervalFactor(14)).toBeCloseTo(0.8, 10);
+  });
+
+  it("has no jump between neighbouring scores around the old 7.5 cut", () => {
+    const interval = (relevance: number) => calculateNextInterval({
+      questionCount: 20, correctCount: 15, perceivedDifficulty: "Médio", relevance,
+      previousIntervalDays: 35, isFirstContact: false,
+    }).intervalDays;
+    expect(interval(7.4)).toBe(96);
+    expect(interval(7.5)).toBe(96);
+    expect(interval(10)).toBe(84);
+    expect(interval(5.5)).toBe(105);
+  });
+
+  it("weights the queue continuously from 1 to 3", () => {
+    expect(relevancePriorityWeight(1)).toBeCloseTo(1, 10);
+    expect(relevancePriorityWeight(5.5)).toBeCloseTo(2, 10);
+    expect(relevancePriorityWeight(10)).toBeCloseTo(3, 10);
+    expect(calculatePriority({ urgency: 1, performanceBand: "muito_bom", relevance: 7.5 })).toBeCloseTo(2.4444, 4);
+  });
+
+  it("shows the student a category derived from the score", () => {
+    expect(importanceFromRelevance(7.5)).toBe("alta");
+    expect(importanceFromRelevance(7.4)).toBe("media");
+    expect(importanceFromRelevance(3.6)).toBe("media");
+    expect(importanceFromRelevance(3.5)).toBe("baixa");
+  });
+
+  it("keeps topics that only have a category on the old factors", () => {
+    for (const importance of ["alta", "media", "baixa"] as const) {
+      expect(importanceFromRelevance(relevanceFromImportance(importance))).toBe(importance);
+    }
+    expect(relevanceIntervalFactor(relevanceFromImportance("alta"))).toBeCloseTo(0.8, 10);
+    expect(relevanceIntervalFactor(relevanceFromImportance("baixa"))).toBeCloseTo(1.2, 10);
+  });
+});

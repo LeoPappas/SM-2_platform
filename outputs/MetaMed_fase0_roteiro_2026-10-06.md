@@ -42,6 +42,7 @@ Comparei o SQL registrado no remoto (`supabase_migrations.schema_migrations`) co
 | `20260927180243_relevance_catalog_v3_foundation` | `20261018165454` | Não. Aplicada em 18/10 por carregador com MD5 (ver `MetaMed_fase2_cursinhos_2026-10-18.md`) |
 | `20261018120000_activate_course_catalogs` | `20261018165519` | Não |
 | `20261018200000_weekly_confirmation_and_archive` | `20261018195950` | Não |
+| `20261018220000_numeric_relevance_engine` | `20261018203032` | Não |
 
 ### Por que o plano original (reparar o histórico e usar `db push`) não serve
 

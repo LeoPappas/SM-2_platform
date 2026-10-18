@@ -79,6 +79,7 @@ function blockFixture(): QuestionBlock {
     performance_band: "ruim", calculation_mode: "performance", engine_version: "metamed-v1",
     catalog_item_id: null, relevance_version_id: null, relevance_score: null, relevance_factor: null,
     relevance_formula_version: null, relevance_formula_config: null, relevance_shadow_interval_days: null, archived_at: null,
+    canonical_topic_id: null, engine_relevance: 5.5,
     created_at: "2026-09-01T15:00:00Z", updated_at: "version-0",
   };
 }

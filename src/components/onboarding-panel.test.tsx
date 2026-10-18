@@ -92,6 +92,6 @@ describe("OnboardingPanel course choice", () => {
     await user.click(screen.getByRole("button", { name: /Salvar alterações/ }));
 
     await waitFor(() => expect(mocks.upserts).toHaveLength(1));
-    expect(mocks.upserts[0]).toMatchObject({ course_catalog_source: "metamed", course_catalog_release_id: null, course_theme_total: 184 });
+    expect(mocks.upserts[0]).toMatchObject({ course_catalog_source: "metamed", course_catalog_release_id: null, course_theme_total: 492 });
   });
 });

@@ -180,6 +180,7 @@ describe("TopicFormModal", () => {
     expect(mocks.inserts[0].row).toMatchObject({
       title: "Insuficiência Cardíaca", source: "Medway · Extensivo R1 2026", importance: "alta",
       catalog_item_id: "item-ic", relevance_version_id: "publication-v3", relevance_score: 8.4,
+      engine_relevance: 8.4, canonical_topic_id: null,
     });
     expect(mocks.inserts[1].row).toMatchObject({
       contact_type: "first_contact", catalog_item_id: "item-ic", relevance_version_id: "publication-v3", relevance_score: 8.4,
@@ -218,6 +219,7 @@ describe("TopicFormModal", () => {
     expect(block).toMatchObject({
       title: "Síndrome disfágica", source: "Tema próprio", major_area: "Clínica Médica",
       specialty: "Gastroenterologia", importance: "alta", suggested_importance: null,
+      engine_relevance: 10, canonical_topic_id: null,
     });
     expect(block).not.toHaveProperty("catalog_item_id");
     expect(mocks.inserts[1].row).not.toHaveProperty("catalog_item_id");
@@ -256,6 +258,27 @@ describe("TopicFormModal", () => {
         source: "Medway · Extensivo R1 2026",
       }),
     }));
+  });
+
+  it("saves a Lista MetaMed topic with its relevancia_global and the category derived from it", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue([
+      { title: "Insuficiência cardíaca crônica", catalogArea: "Clínica Médica", majorArea: "Clínica Médica", specialty: "Cardiologia",
+        suggestedImportance: "alta", relevanceScore: 9, canonicalTopicId: "CM-CAR-004", sourceLabel: "MetaMed" },
+      { title: "Síncope", catalogArea: "Clínica Médica", majorArea: "Clínica Médica", specialty: "Cardiologia",
+        suggestedImportance: "media", relevanceScore: 6, canonicalTopicId: "CM-CAR-011", sourceLabel: "MetaMed" },
+    ] satisfies CatalogTopic[]);
+    renderModal({ profile: { exam_date: "2027-03-01", course_catalog_source: "metamed" } as never });
+    await waitFor(() => expect(select("Tema").value).toBe("CM-CAR-004"));
+    await user.selectOptions(select("Tema"), "CM-CAR-011");
+    await user.click(submitButton("Registrar tema"));
+
+    await waitFor(() => expect(mocks.inserts).toHaveLength(2));
+    expect(mocks.inserts[0].row).toMatchObject({
+      title: "Síncope", source: "MetaMed", canonical_topic_id: "CM-CAR-011", engine_relevance: 6,
+      importance: "media", suggested_importance: "media",
+    });
+    expect(mocks.inserts[0].row).not.toHaveProperty("catalog_item_id");
   });
 
   it("keeps a topic linked to a lesson read-only", async () => {

@@ -46,7 +46,7 @@ export async function completeBlockReview({
     questionCount,
     correctCount,
     perceivedDifficulty,
-    importance: block.importance,
+    relevance: block.engine_relevance,
     previousIntervalDays: block.interval_days,
     isFirstContact: false,
     reviewDate,
@@ -69,7 +69,7 @@ export async function completeBlockReview({
   const priorityScore = calculatePriority({
     urgency,
     performanceBand: block.performance_band ?? classifyPerformance(block.accuracy_percentage),
-    importance: block.importance,
+    relevance: block.engine_relevance,
   });
 
   const review = {

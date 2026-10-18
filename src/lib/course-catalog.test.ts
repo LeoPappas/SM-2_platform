@@ -77,4 +77,14 @@ describe("course catalog", () => {
     expect(await findCatalogMatches({ topics, query: "c" })).toEqual([]);
     expect(await findCatalogMatches({ topics, query: "choq" })).toEqual(topics);
   });
+
+  it("finds Lista MetaMed topics by synonym and an old topic by its canonical id", async () => {
+    const topics = [
+      { title: "Insuficiência cardíaca crônica", catalogArea: "Clínica Médica", majorArea: "Clínica Médica" as const, specialty: "Cardiologia",
+        suggestedImportance: "alta" as const, relevanceScore: 9, canonicalTopicId: "CM-CAR-004", aliases: ["ICFEr", "ICC"] },
+    ];
+    expect(await findCatalogMatches({ topics, query: "icc" })).toEqual(topics);
+    expect(topicKey(topics[0])).toBe("CM-CAR-004");
+    expect(findLegacyCatalogMatch(topics, { title: "Outro nome", specialty: "Cardiologia", canonical_topic_id: "CM-CAR-004" })).toBe(topics[0]);
+  });
 });
