@@ -34,6 +34,7 @@ import {
   toLegacyGrade,
 } from "@/lib/revision-engine";
 import { supabase } from "@/lib/supabase";
+import { useModalAccessibility } from "@/lib/use-modal-accessibility";
 
 const difficulties: DifficultyRating[] = [
   "Muito fácil",
@@ -96,6 +97,8 @@ export function TopicFormModal({
   const [existingTopic, setExistingTopic] = useState<ExistingTopic | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(!linked);
   const [catalogTopics, setCatalogTopics] = useState<CatalogTopic[]>([]);
+  // Esc and the focus trap, like the other dialogs; ignored while saving.
+  const panelRef = useModalAccessibility(onClose, submitting);
 
   useEffect(() => {
     if (linked) return;
@@ -368,7 +371,7 @@ export function TopicFormModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="modal-panel max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto p-6 sm:p-7">
+      <div ref={panelRef} tabIndex={-1} className="modal-panel max-h-[calc(100vh-2rem)] w-full max-w-4xl overflow-y-auto p-6 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="page-eyebrow">{editing ? "Organização do tema" : "Primeiro contato"}</p>
