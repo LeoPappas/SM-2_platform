@@ -15,7 +15,13 @@ export function TopicTableHeader({ archived }: { archived: boolean }) {
       <span>Tema</span>
       <span>Número de contatos</span>
       <span>Último contato</span>
-      <span>{archived ? "Arquivado em" : "Próximo contato"}</span>
+      {archived ? <span>Arquivado em</span> : (
+        <span>
+          <InfoTooltip content="Data calculada pelo algoritmo. O dia marcado para a revisão depende das vagas disponíveis na sua semana.">
+            Próximo contato
+          </InfoTooltip>
+        </span>
+      )}
       <span>Ações</span>
     </div>
   );

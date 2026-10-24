@@ -306,6 +306,14 @@ describe("TopicFormModal", () => {
     await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));
   });
 
+  it("closes with Escape", async () => {
+    const user = userEvent.setup();
+    const props = renderModal();
+    await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));
+    await user.keyboard("{Escape}");
+    expect(props.onClose).toHaveBeenCalled();
+  });
+
   it("blocks more correct answers than questions", async () => {
     renderModal();
     await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));

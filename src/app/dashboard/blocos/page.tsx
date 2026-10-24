@@ -183,6 +183,12 @@ export default function TemasPage() {
         <div className="empty-state">
           <BookOpenCheck size={24} />
           <p>{view === "archived" ? "Nenhum tema arquivado corresponde aos filtros." : activeCount === 0 ? "Cadastre o primeiro tema que você já estudou." : "Nenhum tema corresponde aos filtros."}</p>
+          {view === "active" && activeCount > 0 && (
+            <p className="-mt-1">
+              Se quiser, adicione um novo tema{" "}
+              <button type="button" onClick={() => setFormBlock("new")} className="font-semibold text-blue-700 underline underline-offset-2 hover:text-blue-800">aqui</button>.
+            </p>
+          )}
           {view === "active" && activeCount === 0 && <button type="button" onClick={() => setFormBlock("new")} className="button-secondary"><Plus size={15} /> Novo tema</button>}
         </div>
       ) : (

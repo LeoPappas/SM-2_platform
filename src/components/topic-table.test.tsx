@@ -55,6 +55,13 @@ describe("TopicTable", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it("explains in the header that the next contact is the calculated date", async () => {
+    const user = userEvent.setup();
+    render(<TopicTableHeader archived={false} />);
+    await user.hover(screen.getByRole("button", { name: "Próximo contato" }));
+    expect(screen.getByRole("tooltip").textContent).toContain("depende das vagas disponíveis");
+  });
+
   it("deletes an active topic straight from its row", async () => {
     const user = userEvent.setup();
     const handlers = renderRow();

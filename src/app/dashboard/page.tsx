@@ -201,7 +201,7 @@ export default function HomeDashboardPage() {
     });
   };
 
-  const row = (item: WeeklyPlanItem, showBacklog = true) => <TopicRow key={item.block.id} block={item.block} area={displayArea(item.block, courseAreas)} areaTone={displayMajorArea(item.block, courseAreas)} item={item} showBacklog={showBacklog} scheduledDate={scheduledOn(item)} onSchedule={() => setScheduleBlock(item.block)} onReview={() => setReviewBlock(item.block)} dragDisabled={moving} />;
+  const row = (item: WeeklyPlanItem) => <TopicRow key={item.block.id} block={item.block} area={displayArea(item.block, courseAreas)} areaTone={displayMajorArea(item.block, courseAreas)} item={item} scheduledDate={scheduledOn(item)} onSchedule={() => setScheduleBlock(item.block)} onReview={() => setReviewBlock(item.block)} dragDisabled={moving} />;
 
   return (
     <div className="page-shell">
@@ -237,7 +237,7 @@ export default function HomeDashboardPage() {
           <p className="mt-3 text-xs leading-5 text-gray-500">Arraste uma revisão pela alça <GripVertical size={12} className="inline align-[-1px]" aria-hidden="true" /> para outro dia ou para a próxima semana; no celular, segure antes de arrastar. Também dá para usar o teclado (Espaço e setas) ou o botão de calendário do tema. Dias fora da rotina e revisões além da capacidade entram como extras.</p>
           <div className="mt-6 grid gap-5 lg:grid-cols-3">
             <TaskColumn title="Feitos" count={completedBlocks.length} icon={<Check size={16} />} tone="done">{completedBlocks.length === 0 ? <InlineEmpty>Nenhuma revisão concluída nesta semana.</InlineEmpty> : completedBlocks.map(block => <TopicRow key={block.id} block={block} area={displayArea(block, courseAreas)} areaTone={displayMajorArea(block, courseAreas)} completedDate={completedByBlock.get(block.id)} />)}</TaskColumn>
-            <TaskColumn title="Por fazer" count={todoItems.length} icon={<Clock3 size={16} />} tone="todo">{todoItems.length === 0 ? <InlineEmpty>Nenhuma revisão agendada nesta semana.</InlineEmpty> : todoItems.map(item => row(item, false))}</TaskColumn>
+            <TaskColumn title="Por fazer" count={todoItems.length} icon={<Clock3 size={16} />} tone="todo">{todoItems.length === 0 ? <InlineEmpty>Nenhuma revisão agendada nesta semana.</InlineEmpty> : todoItems.map(item => row(item))}</TaskColumn>
             <TaskColumn title="Atrasados" count={plan.backlog.length} icon={<CalendarPlus size={16} />} tone="late">{plan.backlog.length === 0 ? <InlineEmpty>Nenhum atraso aguardando uma vaga.</InlineEmpty> : plan.backlog.map(item => row(item))}</TaskColumn>
           </div>
           {plan.deferred.length > 0 && <section className="mt-5 overflow-hidden card"><div className="border-b border-gray-100 px-4 py-4"><h2 className="text-sm font-semibold text-gray-900">Pendentes nesta semana · {plan.deferred.length}</h2><p className="mt-1 text-xs leading-5 text-gray-500">Estas revisões ainda não têm uma vaga disponível. Elas só viram atraso após o fechamento da semana. Você pode ajustar a capacidade ou escolher outro dia.</p></div><div className="divide-y divide-gray-100">{plan.deferred.map(item => row(item))}</div></section>}
@@ -296,12 +296,12 @@ function TaskColumn({ title, count, icon, tone, children }: { title: string; cou
   return <section className="overflow-hidden card"><div className={`flex items-center justify-between border-b px-4 py-3.5 ${tones[tone]}`}><div className="flex items-center gap-2">{icon}<h2 className="text-sm font-semibold">{title}</h2></div><span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-2 text-xs font-semibold tabular-nums">{count}</span></div><div className="divide-y divide-gray-100">{children}</div></section>;
 }
 
-function TopicRow({ block, area, areaTone: tone, item, showBacklog = true, scheduledDate, completedDate, onSchedule, onReview, dragDisabled = false }: {
-  block: QuestionBlock; area: string; areaTone: QuestionBlock["major_area"]; item?: WeeklyPlanItem; showBacklog?: boolean; scheduledDate?: string | null; completedDate?: string;
+function TopicRow({ block, area, areaTone: tone, item, scheduledDate, completedDate, onSchedule, onReview, dragDisabled = false }: {
+  block: QuestionBlock; area: string; areaTone: QuestionBlock["major_area"]; item?: WeeklyPlanItem; scheduledDate?: string | null; completedDate?: string;
   onSchedule?: () => void; onReview?: () => void; dragDisabled?: boolean;
 }) {
   return <div className="flex min-h-32 gap-3 px-4 py-4"><div className="min-w-0 flex-1">
-    <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold text-gray-900">{block.title}</h3>{item?.isExtra && <span className="status-badge bg-gray-200 text-gray-800">Extra</span>}{item?.isAnticipation && <span className="status-badge bg-blue-50 text-blue-700">Antecipação</span>}{showBacklog && block.backlog_since && !completedDate && <span className="status-badge bg-amber-50 text-amber-700">Previsto para {formatDate(block.next_review_date)}</span>}{block.pre_exam_review_requested && <span className="status-badge bg-amber-50 text-amber-700">Antes da prova</span>}</div>
+    <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold text-gray-900">{block.title}</h3>{item?.isExtra && <span className="status-badge bg-gray-200 text-gray-800">Extra</span>}{item?.isAnticipation && <span className="status-badge bg-blue-50 text-blue-700">Antecipação</span>}{block.pre_exam_review_requested && <span className="status-badge bg-amber-50 text-amber-700">Antes da prova</span>}</div>
     <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-gray-500"><span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${areaTone(tone)}`} />{area} · {block.specialty}</p>
     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500"><span>{block.accuracy_percentage}% · {block.performance_band ? performanceLabel(block.performance_band) : "legado"}</span><span>Importância {importanceLabel(block.importance).toLocaleLowerCase("pt-BR")}</span>{completedDate && <span className="font-semibold text-emerald-700">Concluído em {formatDate(completedDate)}</span>}{!completedDate && scheduledDate && <span className="font-semibold text-blue-700">Agendada: {formatDate(scheduledDate)}</span>}</div>
     {completedDate && block.planned_review_date
