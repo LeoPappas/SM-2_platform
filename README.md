@@ -124,6 +124,14 @@ node scripts/verify-relevance-catalog.mjs
 
 Desde 18/10/2026 o motor usa a nota diretamente (`numeric_relevance_engine`), sem passar pelo modo `shadow`; as estruturas de comparacao da v3 continuam no banco, sem uso.
 
+Desde 24/10/2026:
+
+- temas sem nota (temas proprios) usam a mediana da faixa nos catalogos: alta 8,5, media 6,2, baixa 3 (`own_topic_relevance_values`);
+- o aluno pode corrigir apenas a ultima sessao de um tema, pela RPC `edit_last_block_session`, que recalcula a proxima revisao e mantem o dia marcado quando a data calculada nao muda;
+- um tema ativo nao pode ser cadastrado duas vezes: mesma aula, mesmo tema da Lista MetaMed ou mesmo nome de tema proprio (`one_active_topic`).
+
+As versoes remotas dessas migracoes estao em `outputs/MetaMed_fase0_roteiro_2026-10-06.md`.
+
 ## Desenvolvimento local
 
 ```bash

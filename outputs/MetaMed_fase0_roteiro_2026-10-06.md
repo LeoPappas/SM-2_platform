@@ -43,6 +43,10 @@ Comparei o SQL registrado no remoto (`supabase_migrations.schema_migrations`) co
 | `20261018120000_activate_course_catalogs` | `20261018165519` | Não |
 | `20261018200000_weekly_confirmation_and_archive` | `20261018195950` | Não |
 | `20261018220000_numeric_relevance_engine` | `20261018203032` | Não |
+| `20261024120000_own_topic_relevance_values` | `20261024175558` | Não. Conferido em 24/10: SQL remoto idêntico ao arquivo |
+| `20261024200000_edit_last_block_session` | `20261024184048` | Não. Idem |
+| `20261024210000_edit_session_keeps_schedule` | `20261024185253` | Não. Idem; substitui a função da anterior |
+| `20261024220000_one_active_topic` | `20261024191322` | Não. Idem |
 
 ### Por que o plano original (reparar o histórico e usar `db push`) não serve
 

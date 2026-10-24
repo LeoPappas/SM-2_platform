@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  displayArea,
+  matchesSearch,
+  displayMajorArea,
   findCatalogMatches,
   findLegacyCatalogMatch,
   fromCatalogSuggestion,
@@ -39,15 +42,25 @@ describe("course catalog", () => {
     expect(searchCourseCatalog(topics, "trauma")).toHaveLength(1);
   });
 
-  it("builds cascading area, specialty and topic options from the active catalog", () => {
+  it("finds a title whatever accents, hyphens or spaces the student types", () => {
+    const topics = [{ title: "Pré-Natal", catalogArea: "Ginecologia e Obstetrícia", majorArea: "Ginecologia e Obstetrícia" as const, specialty: "Obstetrícia", suggestedImportance: "alta" as const }];
+    for (const query of ["pre natal", "prenatal", "Pré-natal", "PRE-NATAL", "natal"]) {
+      expect(searchCourseCatalog(topics, query)).toHaveLength(1);
+    }
+    expect(searchCourseCatalog(topics, "pós-natal")).toHaveLength(0);
+    expect(matchesSearch("Técnica Operatória", "tecnica operatoria")).toBe(true);
+  });
+
+  it("builds cascading area, specialty and topic options in alphabetical order", () => {
     const topics = [
-      { title: "Choque", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia" as const, specialty: "Trauma", suggestedImportance: "media" as const },
-      { title: "FAST", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia" as const, specialty: "Trauma", suggestedImportance: "media" as const },
       { title: "Rádio Explica", catalogArea: "Radiologia", majorArea: "A classificar" as const, specialty: "Radiologia", suggestedImportance: "media" as const },
+      { title: "FAST", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia" as const, specialty: "Trauma", suggestedImportance: "media" as const },
+      { title: "Choque", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia" as const, specialty: "Trauma", suggestedImportance: "media" as const },
+      { title: "Abdome agudo", catalogArea: "Cirurgia Geral", majorArea: "Cirurgia" as const, specialty: "Abdome", suggestedImportance: "media" as const },
     ];
 
     expect(getCatalogAreas(topics)).toEqual(["Cirurgia Geral", "Radiologia"]);
-    expect(getCatalogSpecialties(topics, "Cirurgia Geral")).toEqual(["Trauma"]);
+    expect(getCatalogSpecialties(topics, "Cirurgia Geral")).toEqual(["Abdome", "Trauma"]);
     expect(getCatalogTopics(topics, "Cirurgia Geral", "Trauma").map(topic => topic.title)).toEqual(["Choque", "FAST"]);
   });
 
@@ -86,5 +99,19 @@ describe("course catalog", () => {
     expect(await findCatalogMatches({ topics, query: "icc" })).toEqual(topics);
     expect(topicKey(topics[0])).toBe("CM-CAR-004");
     expect(findLegacyCatalogMatch(topics, { title: "Outro nome", specialty: "Cardiologia", canonical_topic_id: "CM-CAR-004" })).toBe(topics[0]);
+  });
+
+  it("shows the course's area for a linked lesson and the topic's own area otherwise", () => {
+    const courseAreas = new Map([["item-disfagia", "Cirurgia Geral"]]);
+    expect(displayArea({ catalog_item_id: "item-disfagia", major_area: "Clínica Médica" }, courseAreas)).toBe("Cirurgia Geral");
+    expect(displayArea({ catalog_item_id: "item-unknown", major_area: "Clínica Médica" }, courseAreas)).toBe("Clínica Médica");
+    expect(displayArea({ catalog_item_id: null, major_area: "Pediatria" }, courseAreas)).toBe("Pediatria");
+  });
+
+  it("colours a course area by the major area it names, falling back to the topic's own", () => {
+    const courseAreas = new Map([["disfagia", "Cirurgia Geral"], ["parto", "GO"], ["convulsao", "Neuro-Ped"]]);
+    expect(displayMajorArea({ catalog_item_id: "disfagia", major_area: "Clínica Médica" }, courseAreas)).toBe("Cirurgia");
+    expect(displayMajorArea({ catalog_item_id: "parto", major_area: "Pediatria" }, courseAreas)).toBe("Ginecologia e Obstetrícia");
+    expect(displayMajorArea({ catalog_item_id: "convulsao", major_area: "Pediatria" }, courseAreas)).toBe("Pediatria");
   });
 });

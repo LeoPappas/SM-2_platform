@@ -10,7 +10,9 @@ import { OnboardingPanel } from "@/components/onboarding-panel";
 import { ReviewDragContext, ReviewDragHandle, useReviewDropTarget, type DraggedReview, type ReviewDropTarget } from "@/components/review-drag";
 import { ReviewModal } from "@/components/review-modal";
 import { ScheduleReviewModal } from "@/components/schedule-review-modal";
+import { TopicFormModal } from "@/components/topic-form-modal";
 import { WeeklyAvailabilityModal } from "@/components/weekly-availability-modal";
+import { displayArea, displayMajorArea, loadCourseAreas } from "@/lib/course-catalog";
 import { persistAutomaticReviewSchedule } from "@/lib/question-block-writes";
 import type { QuestionBlock, StudentProfile, WeeklyPlan as SavedWeeklyPlan } from "@/lib/database.types";
 import { planningToday } from "@/lib/planning-date";
@@ -28,6 +30,7 @@ export default function HomeDashboardPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [blocks, setBlocks] = useState<QuestionBlock[]>([]);
+  const [courseAreas, setCourseAreas] = useState<ReadonlyMap<string, string>>(new Map());
   const [completedReviews, setCompletedReviews] = useState<CompletedReview[]>([]);
   const [weeks, setWeeks] = useState<SavedWeeklyPlan[]>([]);
   const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null);
@@ -38,6 +41,7 @@ export default function HomeDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reviewBlock, setReviewBlock] = useState<QuestionBlock | null>(null);
+  const [creatingTopic, setCreatingTopic] = useState(false);
   const [scheduleBlock, setScheduleBlock] = useState<QuestionBlock | null>(null);
   const [availabilityTarget, setAvailabilityTarget] = useState<AvailabilityTarget | null>(null);
   const [confirmingWeek, setConfirmingWeek] = useState(false);
@@ -73,9 +77,11 @@ export default function HomeDashboardPage() {
         supabase.from("block_reviews").select("block_id,review_date").eq("user_id", userId).eq("contact_type", "review").gte("review_date", viewedWeek.weekStart).lte("review_date", viewedWeek.weekEnd),
       ]);
       if (blocksResult.error || reviewsResult.error) throw new Error("Não foi possível carregar sua semana.");
+      const nextCourseAreas = await loadCourseAreas(blocksResult.data ?? []).catch(() => new Map<string, string>());
       if (version !== loadVersion.current) return;
       setProfile(nextProfile);
       setBlocks(blocksResult.data ?? []);
+      setCourseAreas(nextCourseAreas);
       setCompletedReviews(reviewsResult.data ?? []);
       setWeeks(plansResult.data ?? []);
       setCurrentWeekStart(prepared.week_start);
@@ -195,7 +201,7 @@ export default function HomeDashboardPage() {
     });
   };
 
-  const row = (item: WeeklyPlanItem) => <TopicRow key={item.block.id} block={item.block} item={item} scheduledDate={scheduledOn(item)} onSchedule={() => setScheduleBlock(item.block)} onReview={() => setReviewBlock(item.block)} dragDisabled={moving} />;
+  const row = (item: WeeklyPlanItem, showBacklog = true) => <TopicRow key={item.block.id} block={item.block} area={displayArea(item.block, courseAreas)} areaTone={displayMajorArea(item.block, courseAreas)} item={item} showBacklog={showBacklog} scheduledDate={scheduledOn(item)} onSchedule={() => setScheduleBlock(item.block)} onReview={() => setReviewBlock(item.block)} dragDisabled={moving} />;
 
   return (
     <div className="page-shell">
@@ -215,7 +221,7 @@ export default function HomeDashboardPage() {
       )}
       <header className="page-header mb-5 sm:items-center">
         <div><h1 className="page-title mt-0">Sua semana, {firstName}</h1><p className="mt-2 text-sm text-gray-500">{formatDate(plan.weekStart)} a {formatDate(plan.weekEnd)} · {plan.capacityUsed} de {plan.capacity} vagas ocupadas{plan.extraCount > 0 ? ` · ${plan.extraCount} ${plan.extraCount === 1 ? "extra" : "extras"}` : ""}</p></div>
-        <Link href="/dashboard/blocos" className="button-primary"><Plus size={16} /> Novo tema</Link>
+        <button type="button" onClick={() => setCreatingTopic(true)} className="button-primary"><Plus size={16} /> Novo tema</button>
       </header>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-md border border-gray-200 bg-white p-1 shadow-xs" aria-label="Semana exibida">
@@ -230,15 +236,16 @@ export default function HomeDashboardPage() {
           {weekOffset === 0 && nextWeekDay && <NextWeekDrop date={nextWeekDay} disabled={moving} />}
           <p className="mt-3 text-xs leading-5 text-gray-500">Arraste uma revisão pela alça <GripVertical size={12} className="inline align-[-1px]" aria-hidden="true" /> para outro dia ou para a próxima semana; no celular, segure antes de arrastar. Também dá para usar o teclado (Espaço e setas) ou o botão de calendário do tema. Dias fora da rotina e revisões além da capacidade entram como extras.</p>
           <div className="mt-6 grid gap-5 lg:grid-cols-3">
-            <TaskColumn title="Feitos" count={completedBlocks.length} icon={<Check size={16} />} tone="done">{completedBlocks.length === 0 ? <InlineEmpty>Nenhuma revisão concluída nesta semana.</InlineEmpty> : completedBlocks.map(block => <TopicRow key={block.id} block={block} completedDate={completedByBlock.get(block.id)} />)}</TaskColumn>
-            <TaskColumn title="Por fazer" count={todoItems.length} icon={<Clock3 size={16} />} tone="todo">{todoItems.length === 0 ? <InlineEmpty>Nenhuma revisão agendada nesta semana.</InlineEmpty> : todoItems.map(row)}</TaskColumn>
-            <TaskColumn title="Atrasados" count={plan.backlog.length} icon={<CalendarPlus size={16} />} tone="late">{plan.backlog.length === 0 ? <InlineEmpty>Nenhum atraso aguardando uma vaga.</InlineEmpty> : plan.backlog.map(row)}</TaskColumn>
+            <TaskColumn title="Feitos" count={completedBlocks.length} icon={<Check size={16} />} tone="done">{completedBlocks.length === 0 ? <InlineEmpty>Nenhuma revisão concluída nesta semana.</InlineEmpty> : completedBlocks.map(block => <TopicRow key={block.id} block={block} area={displayArea(block, courseAreas)} areaTone={displayMajorArea(block, courseAreas)} completedDate={completedByBlock.get(block.id)} />)}</TaskColumn>
+            <TaskColumn title="Por fazer" count={todoItems.length} icon={<Clock3 size={16} />} tone="todo">{todoItems.length === 0 ? <InlineEmpty>Nenhuma revisão agendada nesta semana.</InlineEmpty> : todoItems.map(item => row(item, false))}</TaskColumn>
+            <TaskColumn title="Atrasados" count={plan.backlog.length} icon={<CalendarPlus size={16} />} tone="late">{plan.backlog.length === 0 ? <InlineEmpty>Nenhum atraso aguardando uma vaga.</InlineEmpty> : plan.backlog.map(item => row(item))}</TaskColumn>
           </div>
-          {plan.deferred.length > 0 && <section className="mt-5 overflow-hidden card"><div className="border-b border-gray-100 px-4 py-4"><h2 className="text-sm font-semibold text-gray-900">Pendentes nesta semana · {plan.deferred.length}</h2><p className="mt-1 text-xs leading-5 text-gray-500">Estas revisões ainda não têm uma vaga disponível. Elas só viram atraso após o fechamento da semana. Você pode ajustar a capacidade ou escolher outro dia.</p></div><div className="divide-y divide-gray-100">{plan.deferred.map(row)}</div></section>}
+          {plan.deferred.length > 0 && <section className="mt-5 overflow-hidden card"><div className="border-b border-gray-100 px-4 py-4"><h2 className="text-sm font-semibold text-gray-900">Pendentes nesta semana · {plan.deferred.length}</h2><p className="mt-1 text-xs leading-5 text-gray-500">Estas revisões ainda não têm uma vaga disponível. Elas só viram atraso após o fechamento da semana. Você pode ajustar a capacidade ou escolher outro dia.</p></div><div className="divide-y divide-gray-100">{plan.deferred.map(item => row(item))}</div></section>}
         </ReviewDragContext>
       )}
       <div className="mt-6 flex flex-wrap justify-end gap-2"><Link href="/dashboard/calendario" className="button-secondary"><CalendarDays size={16} /> Calendário <ArrowRight size={15} /></Link><Link href="/dashboard/metricas" className="button-secondary"><BarChart3 size={16} /> Métricas <ArrowRight size={15} /></Link></div>
-      {reviewBlock && <ReviewModal block={reviewBlock} userId={session.user.id} examDate={profile.exam_date} timezone={profile.timezone} onClose={() => setReviewBlock(null)} onCompleted={() => loadData(session.user.id)} />}
+      {creatingTopic && <TopicFormModal userId={session.user.id} profile={profile} onClose={() => setCreatingTopic(false)} onSaved={() => loadData(session.user.id)} />}
+      {reviewBlock && <ReviewModal block={reviewBlock} area={displayArea(reviewBlock, courseAreas)} userId={session.user.id} examDate={profile.exam_date} timezone={profile.timezone} onClose={() => setReviewBlock(null)} onCompleted={() => loadData(session.user.id)} />}
       {scheduleBlock && <ScheduleReviewModal block={scheduleBlock} userId={session.user.id} minDate={today} capacityForDate={capacityForDate} onClose={() => setScheduleBlock(null)} onChanged={() => loadData(session.user.id)} />}
       {availabilityTarget && <WeeklyAvailabilityModal title={availabilityTarget.title} weekStart={availabilityTarget.weekStart} dailyCapacities={availabilityTarget.dailyCapacities} hasOverride={availabilityTarget.hasOverride} onClose={() => setAvailabilityTarget(null)} onSaved={() => loadData(session.user.id)} />}
     </div>
@@ -289,13 +296,13 @@ function TaskColumn({ title, count, icon, tone, children }: { title: string; cou
   return <section className="overflow-hidden card"><div className={`flex items-center justify-between border-b px-4 py-3.5 ${tones[tone]}`}><div className="flex items-center gap-2">{icon}<h2 className="text-sm font-semibold">{title}</h2></div><span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-2 text-xs font-semibold tabular-nums">{count}</span></div><div className="divide-y divide-gray-100">{children}</div></section>;
 }
 
-function TopicRow({ block, item, scheduledDate, completedDate, onSchedule, onReview, dragDisabled = false }: {
-  block: QuestionBlock; item?: WeeklyPlanItem; scheduledDate?: string | null; completedDate?: string;
+function TopicRow({ block, area, areaTone: tone, item, showBacklog = true, scheduledDate, completedDate, onSchedule, onReview, dragDisabled = false }: {
+  block: QuestionBlock; area: string; areaTone: QuestionBlock["major_area"]; item?: WeeklyPlanItem; showBacklog?: boolean; scheduledDate?: string | null; completedDate?: string;
   onSchedule?: () => void; onReview?: () => void; dragDisabled?: boolean;
 }) {
   return <div className="flex min-h-32 gap-3 px-4 py-4"><div className="min-w-0 flex-1">
-    <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold text-gray-900">{block.title}</h3>{item?.isExtra && <span className="status-badge bg-gray-200 text-gray-800">Extra</span>}{item?.isAnticipation && <span className="status-badge bg-blue-50 text-blue-700">Antecipação</span>}{block.backlog_since && !completedDate && <span className="status-badge bg-amber-50 text-amber-700">Atraso desde {formatDate(block.backlog_since)}</span>}{block.pre_exam_review_requested && <span className="status-badge bg-amber-50 text-amber-700">Antes da prova</span>}</div>
-    <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-gray-500"><span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${areaTone(block.major_area)}`} />{block.major_area} · {block.specialty}</p>
+    <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold text-gray-900">{block.title}</h3>{item?.isExtra && <span className="status-badge bg-gray-200 text-gray-800">Extra</span>}{item?.isAnticipation && <span className="status-badge bg-blue-50 text-blue-700">Antecipação</span>}{showBacklog && block.backlog_since && !completedDate && <span className="status-badge bg-amber-50 text-amber-700">Previsto para {formatDate(block.next_review_date)}</span>}{block.pre_exam_review_requested && <span className="status-badge bg-amber-50 text-amber-700">Antes da prova</span>}</div>
+    <p className="mt-1 flex items-center gap-1.5 truncate text-xs text-gray-500"><span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${areaTone(tone)}`} />{area} · {block.specialty}</p>
     <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500"><span>{block.accuracy_percentage}% · {block.performance_band ? performanceLabel(block.performance_band) : "legado"}</span><span>Importância {importanceLabel(block.importance).toLocaleLowerCase("pt-BR")}</span>{completedDate && <span className="font-semibold text-emerald-700">Concluído em {formatDate(completedDate)}</span>}{!completedDate && scheduledDate && <span className="font-semibold text-blue-700">Agendada: {formatDate(scheduledDate)}</span>}</div>
     {completedDate && block.planned_review_date
       ? <p className="mt-2 text-xs text-gray-500">Próxima revisão agendada para <span className="font-semibold text-blue-700">{formatDate(block.planned_review_date)}</span></p>

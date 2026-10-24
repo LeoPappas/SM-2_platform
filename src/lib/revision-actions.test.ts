@@ -7,10 +7,11 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("./supabase", () => ({ supabase: { from: api.from, rpc: api.rpc } }));
 
-import { completeBlockReview, rebalanceAutomaticReviewSlots, scheduleBlockReview, setPreExamReviewRequest, unscheduleBlockReview } from "./revision-actions";
+import { completeBlockReview, editLastBlockSession, loadLastSession, rebalanceAutomaticReviewSlots, scheduleBlockReview, setPreExamReviewRequest, unscheduleBlockReview } from "./revision-actions";
 import { deleteQuestionBlock, persistAutomaticReviewSchedule, updateQuestionBlock } from "./question-block-writes";
 
 type CompletionArgs = Database["public"]["Functions"]["complete_block_review"]["Args"];
+type EditArgs = Database["public"]["Functions"]["edit_last_block_session"]["Args"];
 type StoredRow = Record<string, unknown>;
 let blocks: QuestionBlock[];
 let profile: StudentProfile;
@@ -26,6 +27,7 @@ function query(table: string) {
   let mutation: Partial<QuestionBlock> | null = null;
   let orFilter: string | null = null;
   let deleting = false;
+  const orders: Array<[string, boolean]> = [];
   const execute = (single: boolean) => {
     if ((mutation || deleting) && writeError) return { data: null, error: { message: "Write failed" } };
     const source: StoredRow[] = table === "student_profiles" ? [profile as unknown as StoredRow]
@@ -38,6 +40,9 @@ function query(table: string) {
     }
     if (deleting) for (const row of matches) source.splice(source.indexOf(row), 1);
     const snapshot = structuredClone(matches);
+    for (const [key, ascending] of [...orders].reverse()) {
+      snapshot.sort((a, b) => String(a[key]).localeCompare(String(b[key])) * (ascending ? 1 : -1));
+    }
     return { data: single ? snapshot[0] ?? null : snapshot, error: null };
   };
   const fluent = {
@@ -49,6 +54,7 @@ function query(table: string) {
     gte: () => fluent,
     lte: () => fluent,
     or: (expression: string) => { orFilter = expression; return fluent; },
+    order: (key: string, options?: { ascending?: boolean }) => { orders.push([key, options?.ascending ?? true]); return fluent; },
     single: () => Promise.resolve(execute(true)),
     maybeSingle: () => Promise.resolve(execute(true)),
     then: <TResult1 = ReturnType<typeof execute>, TResult2 = never>(
@@ -273,5 +279,100 @@ describe("scheduling actions", () => {
     });
     expect(blocks[0]).toMatchObject({ planned_review_date: "2026-10-30", planning_source: "manual" });
     expect(result.updated).toBe(0);
+  });
+});
+
+function sessionFixture(overrides: Partial<BlockReview>): BlockReview {
+  return {
+    id: "session", block_id: "block-1", user_id: "student-1", review_date: "2026-09-01", question_count: 20, correct_count: 12,
+    accuracy_percentage: 60, perceived_difficulty: "Médio", time_spent_minutes: null, sm2_grade_calculated: 3,
+    previous_next_review_date: null, new_next_review_date: "2026-09-11", contact_type: "first_contact", engine_version: "metamed-v2",
+    calculation_mode: "performance", performance_band: "ruim", importance: "media", previous_interval_days: null, new_interval_days: 10,
+    priority_score: null, catalog_item_id: null, relevance_version_id: null, relevance_score: null, relevance_factor: null,
+    relevance_formula_version: null, relevance_formula_config: null, relevance_shadow_interval_days: null, engine_relevance: 5.5,
+    created_at: "2026-09-01T15:00:00Z", ...overrides,
+  };
+}
+
+describe("editing the last session", () => {
+  const saved = () => Promise.resolve({ data: { block: structuredClone(blocks[0]), review: structuredClone(savedReviews[0]) }, error: null });
+
+  it("recalculates a corrected first contact and sends it with the nearest free day", async () => {
+    savedReviews = [sessionFixture({ id: "first" })];
+    api.rpc.mockImplementation(saved);
+    const { session, previousDate } = await loadLastSession(blocks[0]);
+    expect(session?.id).toBe("first");
+    expect(previousDate).toBeNull();
+
+    const result = await editLastBlockSession({
+      block: blocks[0], session: session!, userId: "student-1", reviewDate: "2026-09-01",
+      questionCount: 20, correctCount: 18, perceivedDifficulty: "Médio",
+    });
+
+    expect(result.calculation.intervalDays).toBe(21);
+    const args = api.rpc.mock.calls[0][1] as EditArgs;
+    expect(api.rpc.mock.calls[0][0]).toBe("edit_last_block_session");
+    expect(args).toMatchObject({ p_block_id: "block-1", p_review_id: "first", p_expected_repetitions: 0, p_planned_review_date: "2026-09-22" });
+    expect(args.p_session).toMatchObject({
+      review_date: "2026-09-01", question_count: 20, correct_count: 18, accuracy_percentage: 90,
+      new_interval_days: 21, new_next_review_date: "2026-09-22", performance_band: "muito_bom",
+    });
+  });
+
+  it("edits only the newest review, from the interval and relevance that review started with", async () => {
+    blocks[0] = { ...blockFixture(), repetitions: 2, engine_relevance: 5.5 };
+    savedReviews = [
+      sessionFixture({ id: "first", review_date: "2026-08-20" }),
+      sessionFixture({ id: "r1", contact_type: "review", review_date: "2026-09-05", previous_interval_days: 7 }),
+      sessionFixture({ id: "r2", contact_type: "review", review_date: "2026-09-12", previous_interval_days: 10, engine_relevance: 10 }),
+    ];
+    api.rpc.mockImplementation(saved);
+    const { session, previousDate } = await loadLastSession(blocks[0]);
+    expect(session?.id).toBe("r2");
+    expect(previousDate).toBe("2026-09-05");
+
+    const result = await editLastBlockSession({
+      block: blocks[0], session: session!, userId: "student-1", reviewDate: "2026-09-12",
+      questionCount: 20, correctCount: 15, perceivedDifficulty: "Médio",
+    });
+
+    // 10 days × 3 (bom) × 0.8 (relevance 10 recorded on the session) = 24.
+    expect(result.calculation.intervalDays).toBe(24);
+    expect((api.rpc.mock.calls[0][1] as EditArgs).p_session.new_next_review_date).toBe("2026-10-06");
+    expect((api.rpc.mock.calls[0][1] as EditArgs).p_expected_repetitions).toBe(2);
+  });
+
+  it("keeps the planned day when the correction does not change the calculated date", async () => {
+    blocks[0] = { ...blockFixture(), next_review_date: "2026-09-11", planned_review_date: "2026-09-25", planning_source: "manual" };
+    savedReviews = [sessionFixture({ id: "first" })];
+    api.rpc.mockImplementation(saved);
+
+    await editLastBlockSession({
+      block: blocks[0], session: savedReviews[0], userId: "student-1", reviewDate: "2026-09-01",
+      questionCount: 20, correctCount: 12, perceivedDifficulty: "Médio", timeSpentMinutes: 60,
+    });
+
+    const args = api.rpc.mock.calls[0][1] as EditArgs;
+    expect(args.p_session).toMatchObject({ new_next_review_date: "2026-09-11", time_spent_minutes: 60 });
+    expect(args.p_planned_review_date).toBe("2026-09-25");
+    expect(api.from).not.toHaveBeenCalledWith("student_profiles");
+  });
+
+  it("refuses a review recorded without its starting interval", async () => {
+    blocks[0] = { ...blockFixture(), repetitions: 1 };
+    const session = sessionFixture({ contact_type: "review", previous_interval_days: null });
+    await expect(editLastBlockSession({
+      block: blocks[0], session, userId: "student-1", reviewDate: "2026-09-12",
+      questionCount: 20, correctCount: 15, perceivedDifficulty: "Médio",
+    })).rejects.toThrow("antes do cálculo atual");
+    expect(api.rpc).not.toHaveBeenCalled();
+  });
+
+  it("explains a session that changed while it was being edited", async () => {
+    api.rpc.mockResolvedValue({ data: null, error: { message: "Session changed; reload the block before saving" } });
+    await expect(editLastBlockSession({
+      block: blocks[0], session: sessionFixture({}), userId: "student-1", reviewDate: "2026-09-01",
+      questionCount: 20, correctCount: 15, perceivedDifficulty: "Médio",
+    })).rejects.toThrow("outra sessão");
   });
 });

@@ -646,6 +646,19 @@ export type Database = {
         };
         Returns: { block: QuestionBlock; review: BlockReview; replayed: boolean };
       };
+      edit_last_block_session: {
+        Args: {
+          p_block_id: string;
+          p_review_id: string;
+          p_expected_repetitions: number;
+          p_session: Pick<BlockReviewInsert,
+            "review_date" | "question_count" | "correct_count" | "accuracy_percentage" | "perceived_difficulty"
+            | "time_spent_minutes" | "sm2_grade_calculated" | "new_next_review_date" | "new_interval_days"
+            | "calculation_mode" | "performance_band" | "engine_version">;
+          p_planned_review_date: string | null;
+        };
+        Returns: { block: QuestionBlock; review: BlockReview };
+      };
       get_catalog_suggestions: {
         Args: {
           p_release_id: string;

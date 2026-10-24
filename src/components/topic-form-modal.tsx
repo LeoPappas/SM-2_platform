@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Link2, Search, X } from "lucide-react";
-import { updateQuestionBlock } from "@/lib/question-block-writes";
+import { Check, Link2, Search, X } from "lucide-react";
+import { SmallSampleNotice } from "@/components/small-sample-notice";
+import { cleanCount, readCounts } from "@/lib/count-input";
+import { ExistingTopicError, findExistingTopic, updateQuestionBlock, type ExistingTopic } from "@/lib/question-block-writes";
 import {
   CUSTOM_TOPIC_SOURCE,
   findCatalogMatches,
@@ -84,12 +86,14 @@ export function TopicFormModal({
   // The student's planning timezone decides "today", not the device clock.
   const today = planningToday(profile?.timezone);
   const [studyDate, setStudyDate] = useState(block?.study_date ?? today);
-  const [questionCount, setQuestionCount] = useState(block?.question_count ?? 20);
-  const [correctCount, setCorrectCount] = useState(block?.correct_count ?? 0);
+  const [questionCount, setQuestionCount] = useState(String(block?.question_count ?? 20));
+  const [correctCount, setCorrectCount] = useState(String(block?.correct_count ?? 0));
+  const [smallSampleConfirmed, setSmallSampleConfirmed] = useState(false);
   const [difficulty, setDifficulty] = useState<DifficultyRating>(block?.perceived_difficulty ?? "Médio");
   const [timeSpent, setTimeSpent] = useState(block?.time_spent_minutes?.toString() ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingTopic, setExistingTopic] = useState<ExistingTopic | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(!linked);
   const [catalogTopics, setCatalogTopics] = useState<CatalogTopic[]>([]);
 
@@ -151,9 +155,14 @@ export function TopicFormModal({
   );
   const attachesCatalog = Boolean(editing && selectedTopic?.catalogItemId);
   const customReady = Boolean(customTitle.trim() && customSpecialty.trim());
-  const accuracy = calculateAccuracy(correctCount, questionCount);
-  const smallSample = getCalculationMode(questionCount) === "small_sample";
-  const canSubmit = !linked && !submitting && correctCount <= questionCount
+  const counts = readCounts(questionCount, correctCount);
+  const questions = counts.questionCount ?? 0;
+  const correct = counts.correctCount ?? 0;
+  const accuracy = calculateAccuracy(correct, questions);
+  const smallSample = questions > 0 && getCalculationMode(questions) === "small_sample";
+  // Editing only changes the classification; the counts belong to the sessions.
+  const countsReady = editing || (counts.valid && (!smallSample || smallSampleConfirmed));
+  const canSubmit = !linked && !submitting && countsReady
     && (mode === "custom" ? customReady : !catalogLoading && Boolean(selectedTopic));
 
   const chooseTopic = (topic: CatalogTopic) => {
@@ -227,6 +236,7 @@ export function TopicFormModal({
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
+    setExistingTopic(null);
 
     try {
       if (block) {
@@ -237,17 +247,31 @@ export function TopicFormModal({
       await onSaved();
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível salvar o tema.");
+      if (cause instanceof ExistingTopicError) setExistingTopic(cause.topic);
+      else setError(cause instanceof Error ? cause.message : "Não foi possível salvar o tema.");
     } finally {
       setSubmitting(false);
     }
   };
 
+  /** Stops a second registration of the same topic before anything is written. */
+  const assertNewTopic = async (topic: { title: string; canonical_topic_id: string | null }, catalogItemId: string | null, excludeBlockId?: string) => {
+    const existing = await findExistingTopic({
+      userId,
+      catalogItemId,
+      canonicalTopicId: topic.canonical_topic_id,
+      title: topic.title,
+      excludeBlockId,
+    });
+    if (existing) throw new ExistingTopicError(existing);
+  };
+
   const createBlock = async () => {
     const { catalog, ...topic } = classification();
+    await assertNewTopic(topic, catalog?.catalog_item_id ?? null);
     const calculation = calculateNextInterval({
-      questionCount,
-      correctCount,
+      questionCount: questions,
+      correctCount: correct,
       perceivedDifficulty: difficulty,
       relevance: topic.engine_relevance,
       isFirstContact: true,
@@ -265,8 +289,8 @@ export function TopicFormModal({
       ...topic,
       area_id: null,
       exam_target_id: null,
-      question_count: questionCount,
-      correct_count: correctCount,
+      question_count: questions,
+      correct_count: correct,
       accuracy_percentage: calculation.accuracy,
       perceived_difficulty: difficulty,
       time_spent_minutes: timeSpent ? Number(timeSpent) : null,
@@ -288,14 +312,16 @@ export function TopicFormModal({
       ...catalog,
     }).select("*").single();
 
+    // 23505: another copy was saved between the check and this insert, for example by a double click.
+    if (insertError?.code === "23505") await assertNewTopic(topic, catalog?.catalog_item_id ?? null);
     if (insertError || !inserted) throw new Error("Não foi possível cadastrar o primeiro contato.");
 
     const { error: contactError } = await supabase.from("block_reviews").insert({
       block_id: inserted.id,
       user_id: userId,
       review_date: studyDate,
-      question_count: questionCount,
-      correct_count: correctCount,
+      question_count: questions,
+      correct_count: correct,
       accuracy_percentage: calculation.accuracy,
       perceived_difficulty: difficulty,
       time_spent_minutes: timeSpent ? Number(timeSpent) : null,
@@ -321,6 +347,7 @@ export function TopicFormModal({
 
   const updateExistingBlock = async (existing: QuestionBlock) => {
     const { catalog, ...topic } = classification();
+    await assertNewTopic(topic, existing.catalog_item_id ?? catalog?.catalog_item_id ?? null, existing.id);
     await updateQuestionBlock({
       blockId: existing.id,
       userId,
@@ -482,16 +509,13 @@ export function TopicFormModal({
                   <input type="date" required max={today} value={studyDate} onChange={event => setStudyDate(event.target.value)} className="field-control" />
                 </Field>
                 <Field label="Questões">
-                  <input type="number" min={1} required value={questionCount} onChange={event => {
-                    const value = Math.max(1, Number(event.target.value));
-                    setQuestionCount(value);
-                    setCorrectCount(current => Math.min(current, value));
-                  }} className="field-control" />
+                  <input type="number" inputMode="numeric" min={1} required value={questionCount} onChange={event => setQuestionCount(cleanCount(event.target.value))} className="field-control" />
                 </Field>
                 <Field label="Acertos">
-                  <input type="number" min={0} max={questionCount} required value={correctCount} onChange={event => setCorrectCount(Math.max(0, Number(event.target.value)))} className="field-control" />
+                  <input type="number" inputMode="numeric" min={0} required value={correctCount} onChange={event => setCorrectCount(cleanCount(event.target.value))} className="field-control" />
                 </Field>
               </div>
+              {counts.tooManyCorrect && <p className="mt-2 text-sm text-red-700">Os acertos não podem passar do número de questões.</p>}
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Field label="Dificuldade percebida">
                   <select value={difficulty} onChange={event => setDifficulty(event.target.value as DifficultyRating)} className="field-control">
@@ -505,19 +529,15 @@ export function TopicFormModal({
               <div className={`mt-4 rounded-md border px-3.5 py-3 text-sm ${smallSample ? "border-amber-200 bg-amber-50 text-amber-900" : "border-gray-200 bg-gray-50 text-gray-600"}`}>
                 <div className="flex items-center justify-between gap-3">
                   <span>Acurácia</span>
-                  <span className="font-semibold tabular-nums text-gray-900">{correctCount}/{questionCount} · {accuracy}%</span>
+                  <span className="font-semibold tabular-nums text-gray-900">{correct}/{questions} · {accuracy}%</span>
                 </div>
-                {smallSample && (
-                  <div className="mt-2 flex gap-2 border-t border-amber-200 pt-2 text-xs leading-5">
-                    <AlertTriangle className="mt-0.5 shrink-0" size={14} />
-                    A dificuldade percebida comandará o primeiro intervalo porque a amostra tem menos de 20 questões.
-                  </div>
-                )}
+                {smallSample && <SmallSampleNotice confirmed={smallSampleConfirmed} onConfirmedChange={setSmallSampleConfirmed} />}
               </div>
             </div>
           )}
 
           {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">{error}</div>}
+          {existingTopic && <ExistingTopicNotice topic={existingTopic} today={today} />}
 
           <div className="flex justify-end gap-2 border-t border-gray-200 pt-5">
             <button type="button" onClick={onClose} className="button-secondary">{linked ? "Fechar" : "Cancelar"}</button>
@@ -531,6 +551,29 @@ export function TopicFormModal({
       </div>
     </div>
   );
+}
+
+/** Where an already registered topic stands, so the student can find it. */
+function ExistingTopicNotice({ topic, today }: { topic: ExistingTopic; today: string }) {
+  const lastContact = topic.last_review_date ?? topic.study_date;
+  const nextReview = topic.planned_review_date ?? topic.next_review_date;
+  return (
+    <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm leading-6 text-red-700">
+      {topic.archived_at ? (
+        <>&quot;{topic.title}&quot; está nos Arquivados. O último contato foi em {formatShortDate(lastContact)}. Restaure-o na página de Temas para continuar de onde parou.</>
+      ) : (
+        <>
+          &quot;{topic.title}&quot; já está nos seus temas. O último contato foi em {formatShortDate(lastContact)}, e a próxima revisão{" "}
+          {nextReview < today ? "estava prevista" : "está prevista"} para {formatShortDate(nextReview)}. Para estudá-lo de novo, registre uma{" "}
+          <strong>revisão</strong> pelo Início ou pelo Calendário.
+        </>
+      )}
+    </div>
+  );
+}
+
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
 }
 
 /** Searches the catalog shortly after the student stops typing. */

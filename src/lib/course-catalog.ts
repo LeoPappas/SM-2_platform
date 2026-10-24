@@ -292,24 +292,71 @@ export function findLegacyCatalogMatch(topics: readonly CatalogTopic[], block: P
   return candidates.find(topic => topic.specialty === block.specialty) ?? candidates[0] ?? null;
 }
 
+/**
+ * The area each linked lesson has in the student's course spreadsheet. The
+ * block's own major_area comes from the canonical topic and stays for analysis.
+ */
+export async function loadCourseAreas(blocks: readonly Pick<QuestionBlock, "catalog_item_id">[]) {
+  const ids = unique(blocks.flatMap(block => block.catalog_item_id ?? []));
+  const areas = new Map<string, string>();
+  if (ids.length === 0) return areas;
+  const { supabase } = await import("./supabase");
+  const { data, error } = await supabase.from("course_catalog_items").select("id,catalog_area").in("id", ids);
+  if (error) throw new Error("Não foi possível carregar as áreas do cursinho.");
+  for (const item of data ?? []) areas.set(item.id, item.catalog_area);
+  return areas;
+}
+
+/** The area the student sees: the course's, else the topic's own. */
+export function displayArea(block: Pick<QuestionBlock, "catalog_item_id" | "major_area">, courseAreas: ReadonlyMap<string, string>) {
+  return (block.catalog_item_id && courseAreas.get(block.catalog_item_id)) || block.major_area;
+}
+
+/** The major area matching the area the student sees, for its colour; the topic's own when the course's is unknown. */
+export function displayMajorArea(block: Pick<QuestionBlock, "catalog_item_id" | "major_area">, courseAreas: ReadonlyMap<string, string>): MajorArea {
+  const mapped = mapMajorArea(displayArea(block, courseAreas));
+  return mapped === "A classificar" ? block.major_area : mapped;
+}
+
+// The cascading lists read alphabetically, whatever order the course spreadsheet uses.
 export function getCatalogAreas(topics: readonly CatalogTopic[]) {
-  return unique(topics.map(topic => topic.catalogArea));
+  return unique(topics.map(topic => topic.catalogArea)).sort(byName);
 }
 
 export function getCatalogSpecialties(topics: readonly CatalogTopic[], catalogArea: string) {
-  return unique(topics.filter(topic => topic.catalogArea === catalogArea).map(topic => topic.specialty));
+  return unique(topics.filter(topic => topic.catalogArea === catalogArea).map(topic => topic.specialty)).sort(byName);
 }
 
 export function getCatalogTopics(topics: readonly CatalogTopic[], catalogArea: string, specialty: string) {
-  return topics.filter(topic => topic.catalogArea === catalogArea && topic.specialty === specialty);
+  return topics.filter(topic => topic.catalogArea === catalogArea && topic.specialty === specialty)
+    .sort((a, b) => byName(a.title, b.title));
 }
 
 export function searchCourseCatalog(topics: readonly CatalogTopic[], query: string, limit = 8) {
-  const normalizedQuery = normalizeHeader(query);
-  if (!normalizedQuery) return [];
+  if (!normalizeSearch(query)) return [];
   return topics.filter(topic => [topic.title, topic.specialty, topic.majorArea, topic.catalogArea, ...(topic.aliases ?? [])]
-    .some(value => normalizeHeader(value).includes(normalizedQuery)))
+    .some(value => matchesSearch(value, query)))
     .slice(0, limit);
+}
+
+/**
+ * Accent, case, hyphen and spacing insensitive: "pre natal", "prenatal" and
+ * "Pré-natal" all find "Pré-Natal".
+ */
+export function matchesSearch(value: string, query: string) {
+  const normalizedQuery = normalizeSearch(query);
+  if (!normalizedQuery) return true;
+  const normalizedValue = normalizeSearch(value);
+  return normalizedValue.includes(normalizedQuery)
+    || normalizedValue.replaceAll(" ", "").includes(normalizedQuery.replaceAll(" ", ""));
+}
+
+function normalizeSearch(value: string) {
+  return normalizeHeader(value).replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function byName(a: string, b: string) {
+  return a.localeCompare(b, "pt-BR", { sensitivity: "base", numeric: true });
 }
 
 function toCatalogTopic(topic: ParsedCourseTopic, sourceLabel: string): CatalogTopic {
@@ -342,7 +389,7 @@ function mapMajorArea(value: string | null): MajorArea {
   const normalized = normalizeHeader(value ?? "");
   if (normalized === "clinica medica") return "Clínica Médica";
   if (normalized === "cirurgia" || normalized === "cirurgia geral") return "Cirurgia";
-  if (normalized === "ginecologia e obstetricia") return "Ginecologia e Obstetrícia";
+  if (normalized === "ginecologia e obstetricia" || normalized === "go") return "Ginecologia e Obstetrícia";
   if (normalized === "pediatria") return "Pediatria";
   if (normalized === "preventiva" || normalized === "medicina preventiva") return "Preventiva";
   return "A classificar";

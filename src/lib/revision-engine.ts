@@ -106,9 +106,12 @@ export function importanceFromRelevance(score: number): Importance {
   return "media";
 }
 
-/** The score used for a topic that only has a category; it reproduces the old category factors. */
+/**
+ * The score used for a topic that only has a category: the median of that band
+ * in the course catalogs, so an own topic sits among the lessons it resembles.
+ */
 export function relevanceFromImportance(importance: Importance) {
-  return { alta: 10, media: 5.5, baixa: 1 }[importance];
+  return { alta: 8.5, media: 6.2, baixa: 3 }[importance];
 }
 
 export function relevanceIntervalFactor(score: number, config: EngineConfig = DEFAULT_ENGINE_CONFIG) {
