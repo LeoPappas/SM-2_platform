@@ -36,7 +36,6 @@ function renderModal(overrides: Partial<Parameters<typeof ReviewModal>[0]> = {})
 }
 
 const field = (label: string | RegExp) => screen.getByLabelText(label) as HTMLInputElement;
-// The number fields clamp on every keystroke, so set the final value in one change event.
 function fill(label: string | RegExp, value: string) {
   fireEvent.change(field(label), { target: { value } });
 }
@@ -78,6 +77,44 @@ describe("ReviewModal", () => {
     expect(screen.queryByText(/menos de 20 questões/)).toBeNull();
     fill("Questões", "19");
     expect(screen.getByText(/menos de 20 questões/)).toBeTruthy();
+  });
+
+  it("asks for confirmation before saving fewer than 20 questions", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    fill("Questões", "8");
+    fill("Acertos", "7");
+    const save = screen.getByRole("button", { name: "Salvar revisão" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    await user.click(screen.getByLabelText("Entendi, quero registrar mesmo assim"));
+    expect(save.disabled).toBe(false);
+    await user.click(save);
+    await waitFor(() => expect(actions.complete).toHaveBeenCalledWith(expect.objectContaining({ questionCount: 8, correctCount: 7 })));
+  });
+
+  it("lets a count field be emptied and retyped without a stuck zero", () => {
+    renderModal();
+    fill("Acertos", "");
+    expect(field("Acertos").value).toBe("");
+    expect((screen.getByRole("button", { name: "Salvar revisão" }) as HTMLButtonElement).disabled).toBe(true);
+    fill("Acertos", "011");
+    expect(field("Acertos").value).toBe("11");
+    fill("Questões", "");
+    expect(field("Questões").value).toBe("");
+  });
+
+  it("explains acertos above the number of questions instead of changing them", () => {
+    renderModal();
+    fill("Questões", "20");
+    fill("Acertos", "25");
+    expect(screen.getByText("Os acertos não podem passar do número de questões.")).toBeTruthy();
+    expect(field("Acertos").value).toBe("25");
+    expect((screen.getByRole("button", { name: "Salvar revisão" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("shows the course's area when the page passes it", () => {
+    renderModal({ area: "Cirurgia Geral" });
+    expect(screen.getByText("Cirurgia Geral · Cardiologia")).toBeTruthy();
   });
 
   it("flags an early review before the suggested date", async () => {

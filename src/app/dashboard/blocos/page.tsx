@@ -4,19 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   Archive,
-  ArchiveRestore,
   BookOpenCheck,
-  History,
-  Pencil,
   Plus,
   Search,
   Trash2,
   X,
 } from "lucide-react";
+import { SessionEditModal } from "@/components/session-edit-modal";
 import { TopicFormModal } from "@/components/topic-form-modal";
+import { TopicTableHeader, TopicTableRow } from "@/components/topic-table";
 import { deleteQuestionBlock, setQuestionBlockArchived } from "@/lib/question-block-writes";
-import type { BlockReview, MajorArea, QuestionBlock, StudentProfile } from "@/lib/database.types";
-import { MAJOR_AREAS } from "@/lib/medical-catalog";
+import { displayArea, loadCourseAreas, matchesSearch } from "@/lib/course-catalog";
+import type { BlockReview, QuestionBlock, StudentProfile } from "@/lib/database.types";
 import { supabase } from "@/lib/supabase";
 
 export default function TemasPage() {
@@ -24,11 +23,13 @@ export default function TemasPage() {
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [blocks, setBlocks] = useState<QuestionBlock[]>([]);
   const [reviewCounts, setReviewCounts] = useState<Record<string, number>>({});
+  const [courseAreas, setCourseAreas] = useState<ReadonlyMap<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [areaFilter, setAreaFilter] = useState<MajorArea | "todas">("todas");
+  const [areaFilter, setAreaFilter] = useState("todas");
   const [formBlock, setFormBlock] = useState<QuestionBlock | "new" | null>(null);
+  const [sessionBlock, setSessionBlock] = useState<QuestionBlock | null>(null);
   const [historyBlock, setHistoryBlock] = useState<QuestionBlock | null>(null);
   const [history, setHistory] = useState<BlockReview[]>([]);
   const [deleteBlock, setDeleteBlock] = useState<QuestionBlock | null>(null);
@@ -58,6 +59,7 @@ export default function TemasPage() {
 
     if (blocksResult.error) setError("Não foi possível carregar os temas.");
     setBlocks(blocksResult.data ?? []);
+    setCourseAreas(await loadCourseAreas(blocksResult.data ?? []).catch(() => new Map<string, string>()));
     setProfile(profileResult.data ?? null);
     setReviewCounts((reviewsResult.data ?? []).reduce<Record<string, number>>((counts, row) => {
       counts[row.block_id] = (counts[row.block_id] ?? 0) + 1;
@@ -75,15 +77,17 @@ export default function TemasPage() {
   }, [loadData]);
 
   const filteredBlocks = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase("pt-BR");
     return blocks.filter(block => {
       if ((view === "archived") !== Boolean(block.archived_at)) return false;
-      const matchesArea = areaFilter === "todas" || block.major_area === areaFilter;
-      const matchesQuery = !normalizedQuery || [block.title, block.specialty, block.source ?? ""]
-        .some(value => value.toLocaleLowerCase("pt-BR").includes(normalizedQuery));
+      const matchesArea = areaFilter === "todas" || displayArea(block, courseAreas) === areaFilter;
+      const matchesQuery = [block.title, block.specialty, block.source ?? ""].some(value => matchesSearch(value, query));
       return matchesArea && matchesQuery;
     });
-  }, [areaFilter, blocks, query, view]);
+  }, [areaFilter, blocks, courseAreas, query, view]);
+  const areaOptions = useMemo(
+    () => [...new Set(blocks.map(block => displayArea(block, courseAreas)))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [blocks, courseAreas],
+  );
 
   const openHistory = async (block: QuestionBlock) => {
     setHistoryBlock(block);
@@ -132,7 +136,6 @@ export default function TemasPage() {
 
   if (loading) return <LoadingState />;
 
-  const legacyCount = blocks.filter(block => block.major_area === "A classificar").length;
   const activeCount = blocks.filter(block => !block.archived_at).length;
   const archivedCount = blocks.length - activeCount;
 
@@ -170,10 +173,9 @@ export default function TemasPage() {
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
           <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar tema ou especialidade" className="field-control pl-9" />
         </label>
-        <select value={areaFilter} onChange={event => setAreaFilter(event.target.value as MajorArea | "todas")} className="field-control sm:w-56">
+        <select value={areaFilter} onChange={event => setAreaFilter(event.target.value)} className="field-control sm:w-56">
           <option value="todas">Todas as áreas</option>
-          {MAJOR_AREAS.map(area => <option key={area}>{area}</option>)}
-          {legacyCount > 0 && <option>A classificar</option>}
+          {areaOptions.map(area => <option key={area}>{area}</option>)}
         </select>
       </div>
 
@@ -184,20 +186,16 @@ export default function TemasPage() {
           {view === "active" && activeCount === 0 && <button type="button" onClick={() => setFormBlock("new")} className="button-secondary"><Plus size={15} /> Novo tema</button>}
         </div>
       ) : (
-        <div className="overflow-hidden card">
-          <div className="hidden grid-cols-[minmax(18rem,1fr)_10rem_11rem_8rem] border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-500 lg:grid">
-            <span>Tema</span>
-            <span>Número de contatos</span>
-            <span>{view === "archived" ? "Arquivado em" : "Próxima revisão"}</span>
-            <span className="text-right">Ações</span>
-          </div>
+        <div className="card">
+          <TopicTableHeader archived={view === "archived"} />
           <div className="divide-y divide-gray-100">
             {filteredBlocks.map(block => (
-              <TopicRow
+              <TopicTableRow
                 key={block.id}
                 block={block}
+                area={displayArea(block, courseAreas)}
                 reviewCount={reviewCounts[block.id] ?? 0}
-                onEdit={() => setFormBlock(block)}
+                onEdit={() => setSessionBlock(block)}
                 onHistory={() => openHistory(block)}
                 onArchive={() => setArchiveBlock(block)}
                 onRestore={() => void changeArchived(block, false)}
@@ -207,6 +205,21 @@ export default function TemasPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {session && sessionBlock && (
+        <SessionEditModal
+          block={sessionBlock}
+          userId={session.user.id}
+          examDate={profile?.exam_date}
+          timezone={profile?.timezone}
+          onClose={() => setSessionBlock(null)}
+          onSaved={() => loadData(session.user.id)}
+          onEditClassification={() => {
+            setSessionBlock(null);
+            setFormBlock(sessionBlock);
+          }}
+        />
       )}
 
       {session && formBlock && (
@@ -220,7 +233,7 @@ export default function TemasPage() {
       )}
 
       {historyBlock && (
-        <HistoryModal block={historyBlock} history={history} onClose={() => {
+        <HistoryModal block={historyBlock} area={displayArea(historyBlock, courseAreas)} history={history} onClose={() => {
           setHistoryBlock(null);
           setHistory([]);
         }} />
@@ -237,58 +250,7 @@ export default function TemasPage() {
   );
 }
 
-function TopicRow({
-  block,
-  reviewCount,
-  onEdit,
-  onHistory,
-  onArchive,
-  onRestore,
-  onDelete,
-  busy,
-}: {
-  block: QuestionBlock;
-  reviewCount: number;
-  onEdit: () => void;
-  onHistory: () => void;
-  onArchive: () => void;
-  onRestore: () => void;
-  onDelete: () => void;
-  busy: boolean;
-}) {
-  const contactCount = reviewCount + 1;
-
-  return (
-    <div className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(18rem,1fr)_10rem_11rem_8rem] lg:items-center">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h2 className="truncate text-base font-semibold text-gray-900">{block.title}</h2>
-          {block.major_area === "A classificar" && <span className="status-badge bg-amber-50 text-amber-700">Classificar</span>}
-        </div>
-        <p className="mt-1 truncate text-xs font-medium text-gray-500">{block.major_area} · {block.specialty}</p>
-      </div>
-      <div>
-        <span className="block text-sm font-semibold tabular-nums text-gray-900">{contactCount}</span>
-        <span className="text-xs text-gray-500">{contactCount === 1 ? "contato" : "contatos"}</span>
-      </div>
-      <div className="text-sm font-medium text-gray-700">
-        {block.archived_at ? formatDate(block.archived_at.slice(0, 10)) : formatDate(block.next_review_date)}
-      </div>
-      <div className="flex justify-start gap-1 lg:justify-end">
-        <ActionButton label="Histórico" onClick={onHistory}><History size={15} /></ActionButton>
-        {block.archived_at ? <>
-          <ActionButton label="Restaurar" onClick={onRestore} disabled={busy}><ArchiveRestore size={15} /></ActionButton>
-          <ActionButton label="Excluir definitivamente" onClick={onDelete} danger><Trash2 size={15} /></ActionButton>
-        </> : <>
-          <ActionButton label="Editar" onClick={onEdit}><Pencil size={15} /></ActionButton>
-          <ActionButton label="Arquivar" onClick={onArchive}><Archive size={15} /></ActionButton>
-        </>}
-      </div>
-    </div>
-  );
-}
-
-function HistoryModal({ block, history, onClose }: { block: QuestionBlock; history: BlockReview[]; onClose: () => void }) {
+function HistoryModal({ block, area, history, onClose }: { block: QuestionBlock; area: string; history: BlockReview[]; onClose: () => void }) {
   const reviews = history.filter(item => item.contact_type === "review");
   const firstContact = history.find(item => item.contact_type === "first_contact");
   return (
@@ -298,7 +260,7 @@ function HistoryModal({ block, history, onClose }: { block: QuestionBlock; histo
           <div>
             <p className="page-eyebrow">Histórico estruturado</p>
             <h2 className="mt-1 text-lg font-semibold text-gray-900">{block.title}</h2>
-            <p className="mt-1 text-sm text-gray-500">{block.major_area} · {block.specialty}</p>
+            <p className="mt-1 text-sm text-gray-500">{area} · {block.specialty}</p>
           </div>
           <button type="button" onClick={onClose} className="icon-button" aria-label="Fechar"><X size={18} /></button>
         </div>
@@ -368,14 +330,6 @@ function ConfirmDelete({ block, submitting, onCancel, onConfirm }: { block: Ques
         </div>
       </div>
     </div>
-  );
-}
-
-function ActionButton({ label, onClick, danger, disabled, children }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={`icon-button ${danger ? "hover:bg-red-50 hover:text-red-700" : ""}`}>
-      {children}
-    </button>
   );
 }
 

@@ -1,7 +1,9 @@
 "use client";
 
 import { useId, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, Check, Play, X } from "lucide-react";
+import { CalendarClock, Check, Play, X } from "lucide-react";
+import { SmallSampleNotice } from "@/components/small-sample-notice";
+import { cleanCount, readCounts } from "@/lib/count-input";
 import type { DifficultyRating, QuestionBlock } from "@/lib/database.types";
 import { completeBlockReview, setPreExamReviewRequest, type CompleteReviewInput } from "@/lib/revision-actions";
 import { planningToday } from "@/lib/planning-date";
@@ -20,6 +22,7 @@ type ReviewResult = Awaited<ReturnType<typeof completeBlockReview>>;
 
 export function ReviewModal({
   block,
+  area,
   userId,
   examDate,
   initialDate,
@@ -28,6 +31,8 @@ export function ReviewModal({
   onCompleted,
 }: {
   block: QuestionBlock;
+  /** The area the student sees; the course's when the topic is a course lesson. */
+  area?: string;
   userId: string;
   examDate?: string | null;
   initialDate?: string;
@@ -36,8 +41,9 @@ export function ReviewModal({
   onCompleted: () => void | Promise<void>;
 }) {
   const [reviewDate, setReviewDate] = useState(initialDate ?? planningToday(timezone));
-  const [questionCount, setQuestionCount] = useState(block.question_count || 20);
-  const [correctCount, setCorrectCount] = useState(block.correct_count);
+  const [questionCount, setQuestionCount] = useState(String(block.question_count || 20));
+  const [correctCount, setCorrectCount] = useState(String(block.correct_count));
+  const [smallSampleConfirmed, setSmallSampleConfirmed] = useState(false);
   const [difficulty, setDifficulty] = useState<DifficultyRating>(block.perceived_difficulty);
   const [timeSpent, setTimeSpent] = useState(block.time_spent_minutes?.toString() ?? "");
   const [submitting, setSubmitting] = useState(false);
@@ -48,17 +54,18 @@ export function ReviewModal({
   const [locked, setLocked] = useState(false);
   const titleId = useId();
 
-  const accuracy = useMemo(
-    () => calculateAccuracy(correctCount, questionCount),
-    [correctCount, questionCount],
-  );
-  const smallSample = getCalculationMode(questionCount) === "small_sample";
+  const counts = readCounts(questionCount, correctCount);
+  const questions = counts.questionCount ?? 0;
+  const correct = counts.correctCount ?? 0;
+  const accuracy = useMemo(() => calculateAccuracy(correct, questions), [correct, questions]);
+  const smallSample = questions > 0 && getCalculationMode(questions) === "small_sample";
+  const countsReady = counts.valid && (!smallSample || smallSampleConfirmed);
   const suggestedDate = block.planned_review_date ?? block.next_review_date;
   const isEarlyReview = Boolean(reviewDate && suggestedDate && reviewDate < suggestedDate);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (correctCount > questionCount) return;
+    if (!countsReady) return;
     setSubmitting(true);
     setError(null);
 
@@ -67,8 +74,8 @@ export function ReviewModal({
         block,
         userId,
         reviewDate,
-        questionCount,
-        correctCount,
+        questionCount: questions,
+        correctCount: correct,
         perceivedDifficulty: difficulty,
         timeSpentMinutes: timeSpent ? Number(timeSpent) : null,
         examDate,
@@ -154,7 +161,7 @@ export function ReviewModal({
     <DialogShell onClose={onClose} busy={submitting} titleId={titleId}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="page-eyebrow">{block.major_area} · {block.specialty}</p>
+          <p className="page-eyebrow">{area ?? block.major_area} · {block.specialty}</p>
           <h2 id={titleId} className="mt-1 text-lg font-semibold text-gray-900">Registrar revisão</h2>
           <p className="mt-1 text-sm text-gray-500">{block.title}</p>
         </div>
@@ -188,29 +195,27 @@ export function ReviewModal({
           <Field label="Questões">
             <input
               type="number"
+              inputMode="numeric"
               min={1}
               required
               value={questionCount}
-              onChange={event => {
-                const value = Math.max(1, Number(event.target.value));
-                setQuestionCount(value);
-                setCorrectCount(current => Math.min(current, value));
-              }}
+              onChange={event => setQuestionCount(cleanCount(event.target.value))}
               className="field-control"
             />
           </Field>
           <Field label="Acertos">
             <input
               type="number"
+              inputMode="numeric"
               min={0}
-              max={questionCount}
               required
               value={correctCount}
-              onChange={event => setCorrectCount(Math.max(0, Number(event.target.value)))}
+              onChange={event => setCorrectCount(cleanCount(event.target.value))}
               className="field-control"
             />
           </Field>
         </div>
+        {counts.tooManyCorrect && <p className="text-sm text-red-700">Os acertos não podem passar do número de questões.</p>}
 
         <Field label="Dificuldade percebida">
           <select
@@ -235,14 +240,9 @@ export function ReviewModal({
         <div className={`rounded-md border px-3.5 py-3 ${smallSample ? "border-amber-200 bg-amber-50" : "border-gray-200 bg-gray-50"}`}>
           <div className="flex items-center justify-between gap-4">
             <span className="text-sm text-gray-600">Desempenho</span>
-            <span className="text-sm font-semibold tabular-nums text-gray-900">{correctCount}/{questionCount} · {accuracy}%</span>
+            <span className="text-sm font-semibold tabular-nums text-gray-900">{correct}/{questions} · {accuracy}%</span>
           </div>
-          {smallSample && (
-            <div className="mt-2 flex gap-2 border-t border-amber-200 pt-2 text-xs leading-5 text-amber-900">
-              <AlertTriangle className="mt-0.5 shrink-0" size={14} />
-              Com menos de 20 questões, a dificuldade percebida define o intervalo. Complete 20 questões quando puder para usar o desempenho.
-            </div>
-          )}
+          {smallSample && <SmallSampleNotice confirmed={smallSampleConfirmed} onConfirmedChange={setSmallSampleConfirmed} />}
         </div>
 
         </fieldset>
@@ -253,7 +253,7 @@ export function ReviewModal({
           <button type="button" onClick={onClose} disabled={submitting} className="button-secondary">Cancelar</button>
           <button
             type="submit"
-            disabled={submitting || Boolean(result) || correctCount > questionCount}
+            disabled={submitting || Boolean(result) || !countsReady}
             className="button-primary"
           >
             <Play size={15} /> {submitting ? "Salvando..." : "Salvar revisão"}

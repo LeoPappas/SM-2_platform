@@ -651,11 +651,14 @@ describe("numeric relevance", () => {
     expect(importanceFromRelevance(3.5)).toBe("baixa");
   });
 
-  it("keeps topics that only have a category on the old factors", () => {
+  it("places topics that only have a category at the median of their band", () => {
     for (const importance of ["alta", "media", "baixa"] as const) {
       expect(importanceFromRelevance(relevanceFromImportance(importance))).toBe(importance);
     }
-    expect(relevanceIntervalFactor(relevanceFromImportance("alta"))).toBeCloseTo(0.8, 10);
-    expect(relevanceIntervalFactor(relevanceFromImportance("baixa"))).toBeCloseTo(1.2, 10);
+    expect(relevanceFromImportance("alta")).toBe(8.5);
+    expect(relevanceFromImportance("media")).toBe(6.2);
+    expect(relevanceFromImportance("baixa")).toBe(3);
+    expect(relevanceIntervalFactor(relevanceFromImportance("alta"))).toBeCloseTo(0.8667, 4);
+    expect(relevanceIntervalFactor(relevanceFromImportance("baixa"))).toBeCloseTo(1.1111, 4);
   });
 });

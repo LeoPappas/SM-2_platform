@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",
-    "verify:db": "node scripts/verify-weekly-planning.mjs && node scripts/verify-relevance-catalog.mjs && node scripts/verify-drop-calendar-sync.mjs && node scripts/verify-course-catalog-choice.mjs && node scripts/verify-weekly-confirmation-and-archive.mjs && node scripts/verify-numeric-relevance.mjs"
+    "verify:db": "node scripts/verify-weekly-planning.mjs && node scripts/verify-relevance-catalog.mjs && node scripts/verify-drop-calendar-sync.mjs && node scripts/verify-course-catalog-choice.mjs && node scripts/verify-weekly-confirmation-and-archive.mjs && node scripts/verify-numeric-relevance.mjs && node scripts/verify-own-topic-relevance.mjs && node scripts/verify-edit-last-session.mjs && node scripts/verify-one-active-topic.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

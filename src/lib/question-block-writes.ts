@@ -43,6 +43,40 @@ export async function persistAutomaticReviewSchedule({ block, userId, date, sour
   return { block: data };
 }
 
+/**
+ * The student's topic that is the same lesson, the same Lista MetaMed topic or,
+ * for own topics, the same name. A topic is studied once and then only reviewed.
+ */
+export async function findExistingTopic({ userId, catalogItemId, canonicalTopicId, title, excludeBlockId }: {
+  userId: string;
+  catalogItemId: string | null;
+  canonicalTopicId: string | null;
+  title: string;
+  excludeBlockId?: string;
+}): Promise<ExistingTopic | null> {
+  let query = supabase.from("question_blocks")
+    .select("id,title,archived_at,study_date,last_review_date,next_review_date,planned_review_date")
+    .eq("user_id", userId);
+  if (catalogItemId) query = query.eq("catalog_item_id", catalogItemId);
+  else if (canonicalTopicId) query = query.eq("canonical_topic_id", canonicalTopicId);
+  else query = query.is("catalog_item_id", null).is("canonical_topic_id", null).ilike("title", title.replace(/[\\%_]/g, "\\$&"));
+  if (excludeBlockId) query = query.neq("id", excludeBlockId);
+  const { data, error } = await query.limit(1);
+  if (error) throw new Error("Não foi possível conferir se o tema já foi cadastrado.");
+  return data?.[0] ?? null;
+}
+
+export type ExistingTopic = Pick<QuestionBlock,
+  "id" | "title" | "archived_at" | "study_date" | "last_review_date" | "next_review_date" | "planned_review_date">;
+
+/** A second registration of a topic; the form shows where the student continues it. */
+export class ExistingTopicError extends Error {
+  constructor(readonly topic: ExistingTopic) {
+    super(`"${topic.title}" já foi cadastrado.`);
+    this.name = "ExistingTopicError";
+  }
+}
+
 /** Archived topics leave the plan and the calendar but keep their history; restoring brings them back. */
 export async function setQuestionBlockArchived({ block, userId, archived }: { block: QuestionBlock; userId: string; archived: boolean }) {
   const { error } = await supabase
@@ -50,6 +84,8 @@ export async function setQuestionBlockArchived({ block, userId, archived }: { bl
     .update({ archived_at: archived ? new Date().toISOString() : null })
     .eq("id", block.id)
     .eq("user_id", userId);
+  // 23505: an active copy of the same topic already exists.
+  if (error?.code === "23505") throw new Error(`Já existe um tema ativo igual a "${block.title}". Arquive ou exclua o outro antes de restaurar este.`);
   if (error) throw new Error(archived ? "Não foi possível arquivar o tema." : "Não foi possível restaurar o tema.");
 }
 

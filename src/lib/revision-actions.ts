@@ -1,4 +1,4 @@
-import type { DifficultyRating, QuestionBlock } from "./database.types";
+import type { BlockReview, DifficultyRating, QuestionBlock } from "./database.types";
 import { persistAutomaticReviewSchedule, updateQuestionBlock } from "./question-block-writes";
 import {
   ENGINE_VERSION,
@@ -134,6 +134,102 @@ export async function completeBlockReview({
     fallsAfterExam: Boolean(examDate && saved.review.new_next_review_date > examDate),
   };
   return { calculation: savedCalculation };
+}
+
+/**
+ * The session a student may still correct: the first contact before any review,
+ * else the newest review. Also returns the date it cannot go before.
+ */
+export async function loadLastSession(block: QuestionBlock): Promise<{ session: BlockReview | null; previousDate: string | null }> {
+  const { data, error } = await supabase
+    .from("block_reviews")
+    .select("*")
+    .eq("block_id", block.id)
+    .eq("user_id", block.user_id)
+    .order("review_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error("Não foi possível carregar a última sessão.");
+  const sessions = data ?? [];
+  const lastType = block.repetitions === 0 ? "first_contact" : "review";
+  const session = sessions.find(item => item.contact_type === lastType) ?? null;
+  if (!session || session.contact_type === "first_contact") return { session, previousDate: null };
+  const previous = sessions.find(item => item.id !== session.id);
+  return { session, previousDate: previous?.review_date ?? block.study_date };
+}
+
+export type EditLastSessionInput = {
+  block: QuestionBlock;
+  session: BlockReview;
+  userId: string;
+  reviewDate: string;
+  questionCount: number;
+  correctCount: number;
+  perceivedDifficulty: DifficultyRating;
+  timeSpentMinutes?: number | null;
+  examDate?: string | null;
+};
+
+/** The next review the corrected numbers lead to, from the same starting point the session had. */
+export function recalculateSession({ block, session, reviewDate, questionCount, correctCount, perceivedDifficulty, examDate }: Omit<EditLastSessionInput, "userId" | "timeSpentMinutes">) {
+  return calculateNextInterval({
+    questionCount,
+    correctCount,
+    perceivedDifficulty,
+    relevance: session.engine_relevance ?? block.engine_relevance,
+    previousIntervalDays: session.previous_interval_days ?? undefined,
+    isFirstContact: session.contact_type === "first_contact",
+    reviewDate,
+    examDate,
+  });
+}
+
+export async function editLastBlockSession(input: EditLastSessionInput) {
+  const { block, session, userId, reviewDate, questionCount, correctCount, perceivedDifficulty, timeSpentMinutes = null } = input;
+  if (!Number.isInteger(questionCount) || questionCount < 1
+    || !Number.isInteger(correctCount) || correctCount < 0 || correctCount > questionCount) {
+    throw new Error("Informe uma quantidade válida de questões e acertos.");
+  }
+  if (session.contact_type === "review" && session.previous_interval_days == null) {
+    throw new Error("Esta revisão foi registrada antes do cálculo atual e não pode ser editada.");
+  }
+  const calculation = recalculateSession(input);
+  if (!calculation.nextReviewDate) throw new Error("Não foi possível calcular a próxima revisão.");
+  // The database keeps the planned day when the calculated date is unchanged.
+  const plannedReviewDate = calculation.nextReviewDate === block.next_review_date
+    ? block.planned_review_date
+    : await findAutomaticReviewDate({
+      userId,
+      targetDate: calculation.nextReviewDate,
+      excludeBlockId: block.id,
+    });
+
+  const { data: saved, error } = await supabase.rpc("edit_last_block_session", {
+    p_block_id: block.id,
+    p_review_id: session.id,
+    p_expected_repetitions: block.repetitions,
+    p_session: {
+      review_date: reviewDate,
+      question_count: questionCount,
+      correct_count: correctCount,
+      accuracy_percentage: calculation.accuracy,
+      perceived_difficulty: perceivedDifficulty,
+      time_spent_minutes: timeSpentMinutes,
+      sm2_grade_calculated: toLegacyGrade(calculation.performanceBand),
+      new_next_review_date: calculation.nextReviewDate,
+      new_interval_days: calculation.intervalDays,
+      calculation_mode: calculation.calculationMode,
+      performance_band: calculation.performanceBand,
+      engine_version: ENGINE_VERSION,
+    },
+    p_planned_review_date: plannedReviewDate,
+  });
+  if (error || !saved) {
+    if (error?.message.includes("changed") || error?.message.includes("last session")) {
+      throw new Error("Este tema recebeu outra sessão enquanto você editava. Atualize a página e tente de novo.");
+    }
+    throw new Error("Não foi possível salvar a sessão. Tente novamente.");
+  }
+  return { calculation, plannedReviewDate };
 }
 
 export async function scheduleBlockReview({

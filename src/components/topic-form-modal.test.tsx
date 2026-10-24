@@ -10,9 +10,11 @@ const mocks = vi.hoisted(() => ({
   findMatches: vi.fn(),
   findDate: vi.fn(),
   updateBlock: vi.fn(),
+  findExisting: vi.fn(),
   inserts: [] as Array<{ table: string; row: Record<string, unknown> }>,
   deletes: [] as Array<{ table: string; filters: Record<string, unknown> }>,
   contactError: null as null | { message: string },
+  blockError: null as null | { code: string; message: string },
 }));
 
 vi.mock("@/lib/course-catalog", async importOriginal => ({
@@ -24,14 +26,18 @@ vi.mock("@/lib/revision-actions", async importOriginal => ({
   ...(await importOriginal<typeof import("@/lib/revision-actions")>()),
   findAutomaticReviewDate: mocks.findDate,
 }));
-vi.mock("@/lib/question-block-writes", () => ({ updateQuestionBlock: mocks.updateBlock }));
+vi.mock("@/lib/question-block-writes", async importOriginal => ({
+  ExistingTopicError: (await importOriginal<typeof import("@/lib/question-block-writes")>()).ExistingTopicError,
+  updateQuestionBlock: mocks.updateBlock,
+  findExistingTopic: mocks.findExisting,
+}));
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => ({
       insert: (row: Record<string, unknown>) => {
         mocks.inserts.push({ table, row });
         const result = table === "question_blocks"
-          ? { data: { ...row, id: "new-block" }, error: null }
+          ? mocks.blockError ? { data: null, error: mocks.blockError } : { data: { ...row, id: "new-block" }, error: null }
           : { data: null, error: mocks.contactError };
         return { select: () => ({ single: () => Promise.resolve(result) }), then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve) };
       },
@@ -75,6 +81,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-11T15:00:00Z"));
   mocks.loadSuggestions.mockReset().mockResolvedValue(catalog);
+  mocks.findExisting.mockReset().mockResolvedValue(null);
+  mocks.blockError = null;
   mocks.findMatches.mockReset().mockResolvedValue([]);
   mocks.findDate.mockReset().mockResolvedValue("2026-10-20");
   mocks.updateBlock.mockReset().mockResolvedValue(undefined);
@@ -219,7 +227,7 @@ describe("TopicFormModal", () => {
     expect(block).toMatchObject({
       title: "Síndrome disfágica", source: "Tema próprio", major_area: "Clínica Médica",
       specialty: "Gastroenterologia", importance: "alta", suggested_importance: null,
-      engine_relevance: 10, canonical_topic_id: null,
+      engine_relevance: 8.5, canonical_topic_id: null,
     });
     expect(block).not.toHaveProperty("catalog_item_id");
     expect(mocks.inserts[1].row).not.toHaveProperty("catalog_item_id");
@@ -304,5 +312,63 @@ describe("TopicFormModal", () => {
     fireEvent.change(screen.getByLabelText("Questões"), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText("Acertos"), { target: { value: "12" } });
     expect(submitButton("Registrar tema").disabled).toBe(true);
+    expect(screen.getByText("Os acertos não podem passar do número de questões.")).toBeTruthy();
+  });
+
+  it("refuses a topic the student already registered and points to where to continue it", async () => {
+    const user = userEvent.setup();
+    mocks.loadSuggestions.mockResolvedValue(courseCatalog);
+    mocks.findExisting.mockResolvedValue({
+      id: "old", title: "Insuficiência Cardíaca", archived_at: null, study_date: "2026-09-20",
+      last_review_date: "2026-10-01", next_review_date: "2026-10-08", planned_review_date: null,
+    });
+    renderModal({ profile: courseProfile });
+    await waitFor(() => expect(select("Tema").value).toBe("item-ic"));
+    await user.click(submitButton("Registrar tema"));
+
+    const notice = await screen.findByRole("alert");
+    expect(notice.textContent).toBe("\"Insuficiência Cardíaca\" já está nos seus temas. O último contato foi em 01/10, e a próxima revisão "
+      + "estava prevista para 08/10. Para estudá-lo de novo, registre uma revisão pelo Início ou pelo Calendário.");
+    expect(notice.querySelector("strong")?.textContent).toBe("revisão");
+    expect(mocks.findExisting).toHaveBeenCalledWith(expect.objectContaining({ catalogItemId: "item-ic" }));
+    expect(mocks.inserts).toHaveLength(0);
+  });
+
+  it("explains a copy saved by a double click between the check and the insert", async () => {
+    const user = userEvent.setup();
+    mocks.findExisting.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      id: "other", title: "Insuficiência cardíaca", archived_at: null, study_date: "2026-10-11",
+      last_review_date: "2026-10-11", next_review_date: "2026-10-25", planned_review_date: "2026-10-26",
+    });
+    mocks.blockError = { code: "23505", message: "duplicate key value violates unique constraint" };
+    renderModal();
+    await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));
+    await user.click(submitButton("Registrar tema"));
+    expect((await screen.findByRole("alert")).textContent).toContain("está prevista para 26/10");
+  });
+
+  it("sends an archived copy back to the archive instead of registering it again", async () => {
+    const user = userEvent.setup();
+    mocks.findExisting.mockResolvedValue({
+      id: "old", title: "Insuficiência cardíaca", archived_at: "2026-10-20T10:00:00Z", study_date: "2026-09-20",
+      last_review_date: null, next_review_date: "2026-09-30", planned_review_date: null,
+    });
+    renderModal();
+    await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));
+    await user.click(submitButton("Registrar tema"));
+    expect((await screen.findByRole("alert")).textContent).toContain("está nos Arquivados. O último contato foi em 20/09.");
+    expect(mocks.inserts).toHaveLength(0);
+  });
+
+  it("explains a small sample in plain words and registers it only after the student confirms", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await waitFor(() => expect(select("Tema").value).toBe("Insuficiência cardíaca"));
+    fireEvent.change(screen.getByLabelText("Questões"), { target: { value: "8" } });
+    fireEvent.change(screen.getByLabelText("Acertos"), { target: { value: "7" } });
+    expect(screen.getByText(/percentual de acerto ainda não é confiável/)).toBeTruthy();
+    expect(submitButton("Registrar tema").disabled).toBe(true);
+    await user.click(screen.getByLabelText("Entendi, quero registrar mesmo assim"));
+    expect(submitButton("Registrar tema").disabled).toBe(false);
   });
 });
