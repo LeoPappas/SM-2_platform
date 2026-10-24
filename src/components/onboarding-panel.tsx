@@ -278,10 +278,10 @@ export function OnboardingPanel({
 
 function timezoneLabel(value: string) {
   return ({
-    "America/Sao_Paulo": "Brasília",
-    "America/Manaus": "Manaus",
-    "America/Rio_Branco": "Rio Branco",
-    "America/Noronha": "Fernando de Noronha",
+    "America/Sao_Paulo": "GMT-3 (ex.: Brasília)",
+    "America/Manaus": "GMT-4 (ex.: Manaus)",
+    "America/Rio_Branco": "GMT-5 (ex.: Rio Branco)",
+    "America/Noronha": "GMT-2 (ex.: Fernando de Noronha)",
   } as Record<string, string>)[value] ?? value.replaceAll("_", " ");
 }
 
